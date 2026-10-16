@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from typing import Any
 
 from .backends import BACKENDS, Backend
 
@@ -21,7 +22,7 @@ def load(path: str | Path) -> dict[str, Backend]:
         return from_config(tomllib.load(f))
 
 
-def from_config(cfg: dict) -> dict[str, Backend]:
+def from_config(cfg: dict[str, Any]) -> dict[str, Backend]:
     out = {}
     for name, entry in cfg.get("models", {}).items():
         kind = entry.get("backend")

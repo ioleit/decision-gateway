@@ -13,8 +13,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import TYPE_CHECKING
 
 from .cache.sqlite import DEFAULT_PATH
+
+if TYPE_CHECKING:
+    from duckdb import DuckDBPyRelation
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -42,7 +46,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "query":
         from . import query
 
-        rel = query.connect(args.source or args.cache).sql(args.sql)
+        # None for statements that return no rows; DuckDB's stubs don't say so.
+        rel: DuckDBPyRelation | None = query.connect(args.source or args.cache).sql(args.sql)
         if rel is None:
             return 0
         if args.csv:
@@ -64,7 +69,8 @@ def main(argv: list[str] | None = None) -> int:
         from .cache import Cache
         from .cache.preheat import preheat
 
-        n = preheat(args.source, Cache(args.cache), revision=args.revision)
+        with Cache(args.cache) as cache:
+            n = preheat(args.source, cache, revision=args.revision)
         print(f"added {n[0]} answers, {n[1]} label rows to {args.cache}")
     return 0
 

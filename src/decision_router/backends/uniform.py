@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from .base import Backend, Reply
+from typing import Any
+
+from .base import Backend, JSONObject, Reply
 
 VERSION = "uniform/1"  # change when the answers it gives change
 
 
 class Uniform(Backend):
     def version(self) -> str:
-        return self.entry.get("version", VERSION)
+        version: str = self.entry.get("version", VERSION)
+        return version
 
-    def call(self, wire: dict, request: dict) -> Reply:
-        answers = {}
+    def call(self, wire: JSONObject, request: JSONObject) -> Reply:
+        answers: JSONObject = {}
         for name, q in wire["questions"].items():
             kind = q.get("type", "choice")
             criteria = q.get("criteria") or {}
@@ -23,7 +26,7 @@ class Uniform(Backend):
             if not options:
                 options = ["true", "false"]
             p = 1 / len(options)
-            answer = {"type": kind, "probabilities": {o: p for o in options}}
+            answer: dict[str, Any] = {"type": kind, "probabilities": dict.fromkeys(options, p)}
             answer["score" if kind == "score" else "choice"] = options[0]
             answers[name] = answer
         return Reply({"model": self.name, "answers": answers}, cost=0.0)

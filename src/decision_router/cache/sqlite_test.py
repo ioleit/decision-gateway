@@ -1,44 +1,46 @@
 import multiprocessing as mp
+from pathlib import Path
 
 from decision_router import Cache, Record
 
 
-def rec(k, answer="A"):
+def rec(k: str, answer: str = "A") -> Record:
     return Record(key=k, model="m", version="v", request={"q": k}, response={"answers": {"q": answer}})
 
 
-def test_first_answer_stays(cache):
+def test_first_answer_stays(cache: Cache) -> None:
     assert cache.put(rec("k", "A"))
     assert not cache.put(rec("k", "B"))
     assert cache.get("k") == {"answers": {"q": "A"}}
     assert cache.get("missing") is None
 
 
-def test_labels_deduplicated_regardless_of_field_order(cache):
+def test_labels_deduplicated_regardless_of_field_order(cache: Cache) -> None:
     cache.put(rec("k"))
     assert cache.label("k", {"a": 1, "b": 2})
     assert not cache.label("k", {"b": 2, "a": 1})
-    assert not cache.label("k", None) and not cache.label("k", {})
+    assert not cache.label("k", None)
+    assert not cache.label("k", {})
     assert cache.counts() == (1, 1)
 
 
-def test_reopen_keeps_everything(tmp_path):
+def test_reopen_keeps_everything(tmp_path: Path) -> None:
     c = Cache(tmp_path / "c.sqlite")
     c.put(rec("k"))
     c.label("k", {"t": 1})
     c.close()
-    assert Cache(tmp_path / "c.sqlite").counts() == (1, 1)
+    with Cache(tmp_path / "c.sqlite") as c:
+        assert c.counts() == (1, 1)
 
 
-def _writer(path, start, n):
-    c = Cache(path)
-    for i in range(start, start + n):
-        c.put(rec(f"k{i}"))
-        c.label(f"k{i}", {"writer": start})
-    c.close()
+def _writer(path: Path, start: int, n: int) -> None:
+    with Cache(path) as c:
+        for i in range(start, start + n):
+            c.put(rec(f"k{i}"))
+            c.label(f"k{i}", {"writer": start})
 
 
-def test_concurrent_writer_processes(tmp_path):
+def test_concurrent_writer_processes(tmp_path: Path) -> None:
     path = tmp_path / "c.sqlite"
     Cache(path).close()
     ctx = mp.get_context("spawn")
@@ -49,6 +51,6 @@ def test_concurrent_writer_processes(tmp_path):
     for p in procs:
         p.join()
     assert all(p.exitcode == 0 for p in procs)
-    c = Cache(path)
-    assert c.counts() == (300, 600)
-    assert c.con.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    with Cache(path) as c:
+        assert c.counts() == (300, 600)
+        assert c.con.execute("PRAGMA journal_mode").fetchone()[0] == "wal"

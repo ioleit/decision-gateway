@@ -1,8 +1,10 @@
 """Ask decision models through one router, with a cache that never asks twice.
 
-    from decision_router import Router, Cache, models
+    from decision_router import Cache, Router, models
     router = Router(models.load("models.toml"), Cache())
     router.ask("uniform", {"state": {...}, "questions": {"q": {"type": "choice", "criteria": {...}}}})
+
+Querying the cache: decision_router.query. Export and preheat: decision_router.cache.
 """
 
 from . import models

@@ -14,15 +14,79 @@ dependencies = []
 [project.optional-dependencies]
 query = ["duckdb>=1.1"]
 hub = ["duckdb>=1.1", "huggingface_hub>=0.25"]
-dev = ["duckdb>=1.1", "huggingface_hub>=0.25", "pytest>=8", "build"]
+dev = [
+    "duckdb>=1.1",
+    "huggingface_hub>=0.25",
+    "pytest>=8",
+    "build",
+    "ruff==0.17.1",
+    "mypy==2.4.0",
+]
 
 [project.scripts]
 decision-router = "decision_router.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/decision_router"]
-# schema.sql is package data; hatch includes non-Python files under the package,
-# and tests/test_package.py checks the built wheel for it.
+# Tests live next to the modules (router.py, router_test.py) and stay out of the wheel.
+# schema.sql is package data; hatch includes non-Python files under the package.
+# tests/package_test.py checks both.
+exclude = ["*_test.py"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Unit tests next to the modules (<module>_test.py); tests/ holds the ones that span
+# the package: the built wheel and the examples.
+testpaths = ["src", "tests"]
+python_files = ["*_test.py"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+xfail_strict = true
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",       # docstrings: written where they help, judged in review, not by rule
+    "CPY001",  # copyright header in every file: LICENSE covers the project
+    "TRY003",  # long messages in exceptions: they carry the context to act on
+    "EM101",   # same, for string literals in exceptions
+    "EM102",   # same, for f-strings in exceptions
+    "COM812",  # conflicts with the formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: plain asserts, literal expected values, fixtures used only for their side effects.
+"**/*_test.py" = ["S101", "PLR2004", "SLF001", "ARG001", "S603"]
+"tests/**" = ["S101", "PLR2004", "S603", "INP001"]
+# The examples are scripts, not a package: imported after putting their folder on sys.path.
+"tests/examples_test.py" = ["S101", "PLR2004", "S603", "INP001", "PLC0415"]
+"conftest.py" = ["INP001"]
+# SQL is built from the schema's own column names and the caller's query: the query tool's job.
+"src/decision_router/cache/*.py" = ["S608"]
+# Optional dependencies (duckdb, huggingface_hub) and subcommands are imported when used.
+"src/decision_router/cli.py" = ["PLC0415", "T201"]
+"src/decision_router/cache/export.py" = ["PLC0415"]
+"src/decision_router/cache/preheat.py" = ["PLC0415"]
+"src/decision_router/query.py" = ["S608", "PLC0415"]
+# Backend.call implementations get the request whether they need it or not.
+"src/decision_router/backends/*.py" = ["ARG002"]
+"src/decision_router/testing.py" = ["ARG002"]
+# Examples are scripts: they print, and they are not a package.
+"examples/**" = ["T201", "INP001"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["src", "tests", "examples", "conftest.py"]
+mypy_path = ["src", "examples/smoke"]
+explicit_package_bases = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool", "possibly-undefined"]
+
+[[tool.mypy.overrides]]
+module = ["duckdb.*", "huggingface_hub.*"]
+follow_untyped_imports = true

@@ -1,9 +1,13 @@
-from conftest import choice
-from decision_router import Cache
+from pathlib import Path
+
+import pytest
+
+from decision_router import Cache, Router
 from decision_router.cli import main
+from decision_router.testing import choice
 
 
-def test_query_export_preheat(tmp_path, router, cache, capsys):
+def test_query_export_preheat(tmp_path: Path, router: Router, cache: Cache, capsys: pytest.CaptureFixture[str]) -> None:
     for n in (2, 3):
         router.ask("uniform", choice(*"ABC"[:n]))
     db = str(cache.path)
@@ -17,7 +21,8 @@ def test_query_export_preheat(tmp_path, router, cache, capsys):
     fresh = tmp_path / "fresh.sqlite"
     assert main(["--cache", str(fresh), "preheat", str(tmp_path / "exp")]) == 0
     assert "added 2 answers" in capsys.readouterr().out
-    assert Cache(fresh).counts() == (2, 0)
+    with Cache(fresh) as c:
+        assert c.counts() == (2, 0)
 
     assert main(["query", "--source", str(tmp_path / "exp"), "--csv", "SELECT count(*) AS n FROM answers"]) == 0
     assert capsys.readouterr().out.splitlines() == ["n", "2"]

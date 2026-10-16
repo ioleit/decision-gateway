@@ -36,17 +36,19 @@ pip install -e '.[dev]'     # + pytest
 ```python
 from decision_router import Cache, Router, models
 
-router = Router(models.load("models.toml"), Cache())   # models.example.toml to start from
-request = {"state": {"options": ["A", "B", "C"]},
-           "questions": {"pick": {"type": "choice", "criteria": {"A": "...", "B": "...", "C": "..."}}}}
+router = Router(models.load("models.toml"), Cache())  # models.example.toml to start from
+request = {
+    "state": {"options": ["A", "B", "C"]},
+    "questions": {"pick": {"type": "choice", "criteria": {"A": "...", "B": "...", "C": "..."}}},
+}
 response = router.ask("uniform", request, labels={"study": "demo", "item": 7})
-router.cached("uniform", request)    # the same response, without asking
+router.cached("uniform", request)  # the same response, without asking
 ```
 
 ```python
 from decision_router import query
 
-con = query.connect()   # the cache; or query.connect("exports/run-1")
+con = query.connect()  # the cache; or query.connect("exports/run-1")
 con.sql("""SELECT model, labels->>'task' AS task, count(*) AS n
            FROM answers JOIN labels USING (key) GROUP BY ALL""").show()
 ```
@@ -80,9 +82,26 @@ src/decision_router/
   cache/             key.py, schema.sql, sqlite.py, export.py, preheat.py
   query.py           DuckDB over a cache file or an export
   cli.py             decision-router query | export | preheat
-tests/               fake backend and server, key, cache, router, backends, query, round trip, CLI, wheel
+  testing.py         Fake backend and request helpers, for tests of code that uses the router
+tests/               tests that span the package: the built wheel, the examples
 examples/smoke/      ten yes/no questions: ask 5, query, preheat 5 from golden/, ask all again
 ```
+
+Each module's unit tests sit next to it (`router.py`, `router_test.py`), one of the two layouts
+pytest describes in [Choosing a test layout](https://docs.pytest.org/en/stable/explanation/goodpractices.html#choosing-a-test-layout).
+They are left out of the wheel.
+
+## Development
+
+```bash
+pip install -e '.[dev]'
+ruff check . && ruff format --check .   # every rule, with the exceptions listed in pyproject.toml
+mypy                                    # strict
+pytest                                  # warnings are errors
+```
+
+CI runs the same on every pull request (`.github/workflows/ci.yml`), with pytest on Python
+3.11 to 3.14.
 
 ## License
 

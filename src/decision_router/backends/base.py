@@ -15,36 +15,40 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
+
+JSONObject = dict[str, Any]  # a request, a response, a models.toml entry, ...
 
 
 @dataclass
 class Reply:
-    response: dict
-    raw: dict | None = None         # the reply as received, if it is not the response
+    response: JSONObject
+    raw: JSONObject | None = None  # the reply as received, if it is not the response
     cost: float | None = None
-    provenance: dict | None = None  # generation id, provider, ...
+    provenance: JSONObject | None = None  # generation id, provider, ...
 
 
 class Backend(ABC):
     """One model as reached through one backend. `entry` is its models.toml table."""
 
-    cache = True  # False: always asked, never stored (also settable per model: cache = false)
+    cache: bool = True  # False: always asked, never stored (also settable per model: cache = false)
 
-    def __init__(self, name: str, entry: dict | None = None):
+    def __init__(self, name: str, entry: JSONObject | None = None) -> None:
         self.name = name
-        self.entry = entry or {}
-        self.cache = self.entry.get("cache", type(self).cache)
+        self.entry: JSONObject = entry or {}
+        self.cache = bool(self.entry.get("cache", type(self).cache))
 
     def version(self) -> str | None:
         """What answers, as it goes into the cache key. None: unknown, so nothing is cached."""
-        return self.entry.get("version")
+        version: str | None = self.entry.get("version")
+        return version
 
-    def wire(self, request: dict) -> dict:
+    def wire(self, request: JSONObject) -> JSONObject:
         """What goes over the network for request (its translation for this API, if any)."""
         return request
 
     @abstractmethod
-    def call(self, wire: dict, request: dict) -> Reply:
+    def call(self, wire: JSONObject, request: JSONObject) -> Reply:
         """Send wire and return the reply as a response for request."""
 
     def __repr__(self) -> str:

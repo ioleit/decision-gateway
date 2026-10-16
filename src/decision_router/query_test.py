@@ -1,11 +1,13 @@
+from pathlib import Path
+
 import pytest
 
-from conftest import choice
-from decision_router import query
+from decision_router import Cache, Router, query
+from decision_router.testing import choice
 
 
 @pytest.fixture
-def filled(router, cache):
+def filled(router: Router, cache: Cache) -> Cache:
     for n in (2, 3, 4):
         opts = "ABCD"[:n]
         router.ask("uniform", choice(*opts), labels={"task": "demo", "n": n})
@@ -14,14 +16,16 @@ def filled(router, cache):
     return cache
 
 
-def test_views_over_the_live_cache(filled):
+def test_views_over_the_live_cache(filled: Cache) -> None:
     con = query.connect(filled.path)
-    assert con.sql("SELECT model, count(*) FROM answers GROUP BY model ORDER BY model").fetchall() == \
-        [("fake", 3), ("uniform", 3)]
-    assert con.sql("SELECT count(*) FROM labels").fetchone()[0] == 7
+    assert con.sql("SELECT model, count(*) FROM answers GROUP BY model ORDER BY model").fetchall() == [
+        ("fake", 3),
+        ("uniform", 3),
+    ]
+    assert con.sql("SELECT count(*) FROM labels").fetchall() == [(7,)]
 
 
-def test_json_columns_are_queryable(filled):
+def test_json_columns_are_queryable(filled: Cache) -> None:
     con = query.connect(filled.path)
     rows = con.sql("""SELECT CAST(l.labels->>'n' AS INT) AS n,
                              CAST(a.response->'answers'->'pick'->'probabilities'->>'A' AS DOUBLE) AS p
@@ -30,13 +34,13 @@ def test_json_columns_are_queryable(filled):
     assert rows == [(2, 0.5), (3, pytest.approx(1 / 3)), (4, 0.25)]
 
 
-def test_reads_while_a_writer_works(filled, router):
+def test_reads_while_a_writer_works(filled: Cache, router: Router) -> None:
     con = query.connect(filled.path)
     router.ask("uniform", choice("X", "Y"))
-    assert con.sql("SELECT count(*) FROM answers").fetchone()[0] >= 6
+    assert con.sql("SELECT count(*) FROM answers").fetchall()[0][0] >= 6
 
 
-def test_missing_source(tmp_path):
+def test_missing_source(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         query.connect(tmp_path / "nope.sqlite")
     with pytest.raises(FileNotFoundError, match="not an export"):
