@@ -5,7 +5,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-ROOT = __import__("pathlib").Path(__file__).parent.parent
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_wheel_contents(tmp_path: Path) -> None:
@@ -15,9 +15,10 @@ def test_wheel_contents(tmp_path: Path) -> None:
         capture_output=True,
     )
     (wheel,) = tmp_path.glob("*.whl")
-    names = zipfile.ZipFile(wheel).namelist()
+    with zipfile.ZipFile(wheel) as z:
+        names = z.namelist()
+        entry_points = z.read(next(n for n in names if n.endswith("entry_points.txt"))).decode()
     assert "decision_router/cache/schema.sql" in names
     assert "decision_router/testing.py" in names
     assert not [n for n in names if n.endswith(("_test.py", "conftest.py"))]
-    entry = next(n for n in names if n.endswith("entry_points.txt"))
-    assert "decision-router = decision_router.cli:main" in zipfile.ZipFile(wheel).read(entry).decode()
+    assert "decision-router = decision_router.cli:main" in entry_points

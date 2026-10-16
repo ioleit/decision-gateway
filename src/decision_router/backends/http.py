@@ -1,27 +1,7 @@
 """Jev / SystemOne over HTTP: OpenRouter, or any endpoint that takes the request as its body.
 
-    [models.jev]
-    backend = "openrouter"
-    model = "typesafe/jev-1.13"                                 # the id sent in the body
-    provider = { only = ["typesafe"], allow_fallbacks = false } # who may serve it (part of the key)
-    version = "openrouter:typesafe/jev-1.13-20260917@typesafe"  # the cache key's version
-    served = "typesafe/jev-1.13-20260917"                       # every answer must report this
-
-    [models.local]
-    backend = "http"
-    url = "http://localhost:8000/v1/systemone"
-    key_env = ""                                                # no bearer token
-    version = "org/repo@<commit>"
-
-Version pinning. A hosted model is only as pinned as its id: `served` is the dated id each
-answer must carry, and an answer from any other model raises ModelChangedError and is not cached
-(OpenRouter does not promise that a new model behind an id gets a new dated id). A model with
-no dated id gets `unpinned`, the UTC time its run started: it is asked new questions only for
-24 hours after that, then refuses (cached answers are still served). For a new run, set a new
-`unpinned` and a new `version`.
-
-The API key is read only when a call is made, so a machine without it still serves every
-cached answer.
+Configured in models.toml (backend = "openrouter" or "http"); models.example.toml describes
+every field, how `served` and `unpinned` decide what may be cached, and has examples.
 """
 
 from __future__ import annotations
@@ -96,7 +76,7 @@ class HTTP(Backend):
     def _check_window(self) -> None:
         if "unpinned" not in self.entry:
             return
-        start = datetime.fromisoformat(self.entry["unpinned"])
+        start = _utc(self.entry["unpinned"])
         if datetime.now(UTC) > start + timedelta(hours=UNPINNED_HOURS):
             raise NotPinnedError(
                 f"{self.name} has no dated model id; it may be asked new questions only for "
@@ -160,6 +140,12 @@ class HTTP(Backend):
             raise error(f"{self.name}: HTTP {e.code}: {text[:300]}") from None
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             raise TransientError(f"{self.name}: {type(e).__name__}: {e}") from e
+
+
+def _utc(value: datetime | str) -> datetime:
+    """`unpinned` as an aware UTC datetime: a TOML datetime or an ISO string; no offset means UTC."""
+    when = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    return when if when.tzinfo else when.replace(tzinfo=UTC)
 
 
 class OpenRouter(HTTP):

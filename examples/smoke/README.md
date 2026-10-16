@@ -4,7 +4,8 @@ Ten yes/no questions (`questions.json`) through the router, to show how the part
 
 1. **Ask** questions 1–5. Each answer is cached with labels (`example`, `id`, `origin`).
 2. **Query** the cache with `decision_router.query`: per question and a summary, in SQL.
-3. **Preheat** questions 6–10 from `golden/<model>/`, an export made elsewhere (`make_golden.py`).
+3. **Preheat** questions 6–10 from `golden/<model>/`: a saved export of known answers (a
+   "golden" set, in testing terms), made beforehand with `make_golden.py`.
 4. **Query** again: all ten, by origin.
 5. **Ask all ten again**: every answer comes from the cache; the model is not asked.
 

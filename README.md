@@ -28,7 +28,7 @@ and preheating, with uniform or live with Jev through OpenRouter.
 pip install -e .            # router and cache only, no dependencies
 pip install -e '.[query]'   # + DuckDB, for query and export
 pip install -e '.[hub]'     # + huggingface_hub, for push and hf:// preheat
-pip install -e '.[dev]'     # + pytest
+pip install -e '.[dev]'     # + pytest, build, ruff, mypy (and DuckDB, huggingface_hub)
 ```
 
 ## Use
@@ -36,7 +36,7 @@ pip install -e '.[dev]'     # + pytest
 ```python
 from decision_router import Cache, Router, models
 
-router = Router(models.load("models.toml"), Cache())  # models.example.toml to start from
+router = Router(models.load("models.toml"), Cache())
 request = {
     "state": {"options": ["A", "B", "C"]},
     "questions": {"pick": {"type": "choice", "criteria": {"A": "...", "B": "...", "C": "..."}}},
@@ -44,6 +44,10 @@ request = {
 response = router.ask("uniform", request, labels={"study": "demo", "item": 7})
 router.cached("uniform", request)  # the same response, without asking
 ```
+
+`models.toml` says which models there are, how each is reached, and when its answers may be
+cached. [`models.example.toml`](models.example.toml) describes every field, with examples;
+copy it to start.
 
 ```python
 from decision_router import query
@@ -69,7 +73,7 @@ first use.
 `sha256(json.dumps([model, version, wire], sort_keys=True, ensure_ascii=False))`, where
 `wire` is the request as it goes over the network. A new model version is a new key, so the
 version must say exactly what answered: pinned weights (`org/repo@<commit>`) or a dated API
-model id. The format is frozen by golden hashes (`tests/test_key.py`), so an export preheats
+model id. The format is frozen by golden hashes (`src/decision_router/cache/key_test.py`), so an export preheats
 any cache to the same hits.
 
 ## Layout

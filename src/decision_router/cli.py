@@ -35,7 +35,11 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("out", help="directory for answers.parquet and labels.parquet")
     e.add_argument("--keys", help="SQL returning the keys to export (default: all)")
     e.add_argument("--push", metavar="REPO_ID", help="then upload to this Hugging Face dataset")
-    e.add_argument("--public", action="store_true", help="create the dataset public (default: private)")
+    e.add_argument(
+        "--public",
+        action="store_true",
+        help="allow a public dataset: create it public, or push to an existing public one (default: refuse)",
+    )
 
     h = sub.add_parser("preheat", help="load an export (directory or hf://owner/name) into the cache")
     h.add_argument("source")

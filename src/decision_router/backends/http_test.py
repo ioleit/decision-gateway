@@ -180,3 +180,19 @@ def test_unwrap(server: Server, cache: Cache) -> None:
     Router({"cf": cf}, cache).ask("cf", choice("A", "B"))
     raw = cache.con.execute("SELECT raw FROM answers").fetchone()[0]
     assert json.loads(raw)["success"] is True
+
+
+@pytest.mark.parametrize(
+    "unpinned",
+    [
+        datetime(2020, 1, 1, tzinfo=UTC),  # unquoted in TOML: tomllib gives a datetime
+        datetime(2020, 1, 1),  # noqa: DTZ001 (TOML local datetime, no offset)
+        "2020-01-01T00:00:00Z",
+        "2020-01-01T00:00:00",  # no offset: taken as UTC
+    ],
+)
+def test_unpinned_formats(server: Server, cache: Cache, unpinned: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    old = OpenRouter("u", {"url": server.url, "version": "v", "unpinned": unpinned})
+    with pytest.raises(NotPinnedError):
+        Router({"u": old}, cache).ask("u", choice("A", "B"))

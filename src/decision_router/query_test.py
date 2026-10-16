@@ -37,7 +37,7 @@ def test_json_columns_are_queryable(filled: Cache) -> None:
 def test_reads_while_a_writer_works(filled: Cache, router: Router) -> None:
     con = query.connect(filled.path)
     router.ask("uniform", choice("X", "Y"))
-    assert con.sql("SELECT count(*) FROM answers").fetchall()[0][0] >= 6
+    assert con.sql("SELECT count(*) FROM answers").fetchall() == [(7,)]
 
 
 def test_missing_source(tmp_path: Path) -> None:

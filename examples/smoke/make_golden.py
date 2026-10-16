@@ -25,6 +25,8 @@ with tempfile.TemporaryDirectory() as tmp, Cache(Path(tmp) / "cache.sqlite") as 
     for q in GOLDEN:
         r.ask(args.model, request(q), labels=labels(q, "golden"))
     out = HERE / "golden" / args.model
+    staging = Path(tmp) / "golden"
+    n = export(cache.path, staging)  # the old set stays in place if this fails
     shutil.rmtree(out, ignore_errors=True)
-    n = export(cache.path, out)
+    shutil.copytree(staging, out)
     print(f"golden/{args.model}/: {n[0]} answers from {args.model}, {n[1]} label rows")

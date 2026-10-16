@@ -51,15 +51,32 @@ def _count(con: DuckDBPyConnection, table: str) -> int:
     return int(row[0]) if row else 0
 
 
+class PublicDatasetError(Exception):
+    """A private push was asked for, but the dataset already exists and is public."""
+
+
 def push(out: str | Path, repo_id: str, *, private: bool = True, revision: str | None = None) -> str:
-    """Upload an export directory to a Hugging Face dataset repo (created if missing, private by
-    default). Returns the commit URL."""
+    """Upload an export directory to a Hugging Face dataset repo. Returns the commit URL.
+
+    private=True (the default): a missing dataset is created private, and an existing public
+    dataset is refused (PublicDatasetError) rather than published to. private=False: a missing
+    dataset is created public. An existing dataset's visibility is never changed."""
     try:
         from huggingface_hub import HfApi
+        from huggingface_hub.errors import RepositoryNotFoundError
     except ImportError:
         raise ImportError("push needs huggingface_hub: pip install 'decision-router[hub]'") from None
     api = HfApi()
-    api.create_repo(repo_id, repo_type="dataset", private=private, exist_ok=True)
+    try:
+        existing = api.repo_info(repo_id, repo_type="dataset")
+    except RepositoryNotFoundError:
+        api.create_repo(repo_id, repo_type="dataset", private=private)
+    else:
+        if private and not existing.private:
+            raise PublicDatasetError(
+                f"{repo_id} is a public dataset; pushing there would publish the export. "
+                "Use another dataset, or pass public (--public) if publishing is intended."
+            )
     info = api.upload_folder(
         folder_path=str(out),
         repo_id=repo_id,
