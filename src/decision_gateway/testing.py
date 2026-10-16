@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 import httpx2
 
 from . import uniform
-from .models import Model
+from .config import ModelConfig
 
 if TYPE_CHECKING:
     JSONObject = dict[str, Any]
@@ -51,10 +51,10 @@ class FakeServer:
         self._lock = threading.Lock()
         self.transport = httpx2.MockTransport(self._handle)
 
-    def model(self, name: str, **fields: Any) -> Model:  # noqa: ANN401 (models.toml fields)
+    def model(self, name: str, **fields: Any) -> ModelConfig:  # noqa: ANN401 (models.toml fields)
         """A models.toml entry for a model served by this server."""
         fields.setdefault("base_url", f"http://{name}.fake.invalid")
-        return Model(name=name, backend="uniform", transport=self.transport, **fields)
+        return ModelConfig(name=name, backend="uniform", transport=self.transport, **fields)
 
     def _handle(self, request: httpx2.Request) -> httpx2.Response:
         body = json.loads(request.content)

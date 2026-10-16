@@ -1,8 +1,8 @@
 """Router: TypeSafe SDK clients by model name, all going through the gateway into one store.
 
-    from decision_gateway import Router, SQLiteStore, models
+    from decision_gateway import Router, SQLiteStore, config
 
-    router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
+    router = Router(config.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
     client = router.client("jev")              # a typesafe_sdk.TypeSafeClient
     client.system_one(state=..., questions={...})
 
@@ -21,17 +21,17 @@ if TYPE_CHECKING:
 
     from typesafe_sdk import AsyncTypeSafeClient, TypeSafeClient
 
-    from .models import Model
+    from .config import ModelConfig
     from .store import Store
 
 
 class Router:
-    def __init__(self, models: Mapping[str, Model], store: Store, labels: dict[str, Any] | None = None) -> None:
+    def __init__(self, models: Mapping[str, ModelConfig], store: Store, labels: dict[str, Any] | None = None) -> None:
         self.models = dict(models)
         self.store = store
         self.labels = dict(labels or {})
 
-    def model(self, name: str) -> Model:
+    def model(self, name: str) -> ModelConfig:
         try:
             return self.models[name]
         except KeyError:

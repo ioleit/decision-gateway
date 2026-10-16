@@ -5,7 +5,7 @@ import httpx2
 import pytest
 from typesafe_sdk import RetryPolicy, TypeSafeClient, TypeSafeInternalServerError
 
-from decision_gateway import Model, RequirementNotMetError, RoutedResponse, Router, SQLiteStore, labels
+from decision_gateway import ModelConfig, RequirementNotMetError, RoutedResponse, Router, SQLiteStore, labels
 from decision_gateway.testing import FakeServer, choice
 from decision_gateway.transport import GatewayTransport
 
@@ -178,7 +178,7 @@ def test_other_endpoints_pass_through(store: SQLiteStore) -> None:
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(200, json={"models": [{"name": "m", "description": "d", "release_date": "2026-01-01"}]})
 
-    model = Model(name="m", backend="uniform", transport=httpx2.MockTransport(handler))
+    model = ModelConfig(name="m", backend="uniform", transport=httpx2.MockTransport(handler))
     client = Router({"m": model}, store).client("m")
     assert [m.name for m in client.models.list().models] == ["m"]
     assert rows(store, "SELECT count(*) FROM requests") == [(0,)]
@@ -202,14 +202,14 @@ def test_async(store: SQLiteStore, server: FakeServer) -> None:
 
 
 def test_uniform(store: SQLiteStore) -> None:
-    client = Router({"u": Model(name="u", backend="uniform")}, store).client("u")
+    client = Router({"u": ModelConfig(name="u", backend="uniform")}, store).client("u")
     r = client.system_one(**choice("A", "B", "C"))
     assert r.model == "uniform"
     assert r.choices["pick"].probabilities["B"] == pytest.approx(1 / 3)
 
 
 def test_unknown_model_and_missing_key(store: SQLiteStore) -> None:
-    router = Router({"jev": Model(name="jev", backend="openrouter", key_env="NO_SUCH_KEY")}, store)
+    router = Router({"jev": ModelConfig(name="jev", backend="openrouter", key_env="NO_SUCH_KEY")}, store)
     with pytest.raises(KeyError, match="unknown model"):
         router.client("nope")
     with pytest.raises(Exception, match="NO_SUCH_KEY"):

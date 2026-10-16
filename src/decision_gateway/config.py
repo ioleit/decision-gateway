@@ -38,7 +38,7 @@ class MissingKeyError(Exception):
 
 
 @dataclass
-class Model:
+class ModelConfig:
     """One entry of models.toml."""
 
     name: str
@@ -102,17 +102,17 @@ class Model:
         return AsyncTypeSafeClient(**self.client_options(), transport=gateway)
 
 
-def load(path: str | Path) -> dict[str, Model]:
+def load(path: str | Path) -> dict[str, ModelConfig]:
     with Path(path).open("rb") as f:
         return from_config(tomllib.load(f))
 
 
-def from_config(cfg: dict[str, Any]) -> dict[str, Model]:
+def from_config(cfg: dict[str, Any]) -> dict[str, ModelConfig]:
     out = {}
     for name, entry in cfg.get("models", {}).items():
         unknown = set(entry) - FIELDS
         if unknown:
             raise ValueError(f"models.toml: {name} has unknown fields {sorted(unknown)}; known: {sorted(FIELDS)}")
         fields = {k: v for k, v in entry.items() if k != "requirements"}
-        out[name] = Model(name=name, requirements_table=entry.get("requirements", {}), **fields)
+        out[name] = ModelConfig(name=name, requirements_table=entry.get("requirements", {}), **fields)
     return out

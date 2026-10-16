@@ -9,7 +9,7 @@ description = "A gateway for System One decision models under the TypeSafe SDK: 
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["typesafe-sdk>=0.7.5,<0.8"]
+dependencies = ["typesafe-sdk>=0.7.5,<0.8", "platformdirs>=4"]
 
 [project.optional-dependencies]
 dev = [

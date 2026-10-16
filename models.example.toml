@@ -2,9 +2,9 @@
 #
 # Copy this file to models.toml and keep the entries you need:
 #
-#     from decision_gateway import Router, SQLiteStore, labels, models
+#     from decision_gateway import Router, SQLiteStore, config, labels
 #
-#     router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
+#     router = Router(config.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
 #     client = router.client("jev")           # a typesafe_sdk.TypeSafeClient
 #     with labels(item=17):
 #         response = client.system_one(state=..., questions={...})
@@ -52,22 +52,19 @@
 #       responses say nothing about which model answered: it keeps one run's answers to a short
 #       window, in which the model is assumed not to change.
 #
-#   "module:Class" = <value>
-#       Your own subclass of decision_gateway.Requirement, built from the value: a table becomes
-#       keyword arguments, anything else one argument. accepts() returns None if an observation
-#       counts, or the reason it doesn't; allows_sending() can stop a request before it is sent.
+#   "module:name" = <value>
+#       Your own: a function that returns why an observation does not count, or None if it does.
+#       A table value is passed as keyword arguments, true as nothing, anything else as one
+#       argument:
 #
-#           from decision_gateway import Observation, Requirement
+#           def max_cost(observation, at_most):
+#               cost = observation.cost or 0.0
+#               return None if cost <= at_most else f"cost {cost} is above {at_most}"
 #
-#           class MaxCost(Requirement):
-#               def __init__(self, at_most: float) -> None:
-#                   self.at_most = at_most
+#       and in models.toml:  "my_checks:max_cost" = { at_most = 0.001 }
 #
-#               def accepts(self, observation: Observation) -> str | None:
-#                   cost = observation.cost or 0.0
-#                   return None if cost <= self.at_most else f"cost {cost} is above {self.at_most}"
-#
-#       and in models.toml:  "my_checks:MaxCost" = { at_most = 0.001 }
+#       Or a subclass of decision_gateway.Requirement, built from the value the same way, whose
+#       rejection() does the same and whose allows_sending() can stop a request before it is sent.
 #
 #
 # ---- Fields -------------------------------------------------------------------------------
@@ -153,7 +150,7 @@ openrouter_response_provider = "TypeSafe"
 # [models.jev-cheap]
 # backend = "openrouter"
 # model = "typesafe/jev-1.13"
-# requirements = { "my_checks:MaxCost" = { at_most = 0.001 } }
+# requirements = { "my_checks:max_cost" = { at_most = 0.001 } }
 
 # The baseline, asked every time.
 # [models.uniform-uncached]

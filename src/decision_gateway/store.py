@@ -24,10 +24,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, Self
 
+from platformdirs import user_data_dir
+
 from .key import canonical
 
+# $DECISION_GATEWAY_STORE, or store.sqlite in the user's data directory for the platform
+# (~/.local/share/decision-gateway on Linux, ~/Library/Application Support/decision-gateway on macOS).
 DEFAULT_PATH = Path(
-    os.environ.get("DECISION_GATEWAY_STORE", "~/.local/share/decision-gateway/store.sqlite")
+    os.environ.get("DECISION_GATEWAY_STORE") or Path(user_data_dir("decision-gateway")) / "store.sqlite"
 ).expanduser()
 
 

@@ -19,25 +19,40 @@ pip install decision-gateway
 ```python
 from typesafe_sdk import Noul
 
-from decision_gateway import Router, SQLiteStore, labels, models
+from decision_gateway import Router, SQLiteStore, config, labels
 
-router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"project": "evals", "run": "2026-10"})
-client = router.client("jev")  # a typesafe_sdk.TypeSafeClient; router.async_client() for async
+router = Router(config.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"project": "evals"})
+eval_set = ["I was charged twice for my subscription.", "How do I change my password?"]
 
-with labels(item=17):
-    response = client.system_one(
-        state="I was charged twice for my subscription.",
-        questions={"refund": Noul(instructions="Is the customer asking for money back?")},
-    )
-response.nouls["refund"].noul
+with router.client("jev") as client:  # a typesafe_sdk.TypeSafeClient; router.async_client() for async
+    for item, text in enumerate(eval_set):
+        with labels(item=item):
+            response = client.system_one(
+                state=text,
+                questions={"refund": Noul(instructions="Is the customer asking for money back?")},
+            )
+        response.nouls["refund"].noul
 ```
 
-Labels say what a request was about, in your terms, for queries later: the router's labels
-go with every request made through its clients, and `labels()` adds more around a call. They
-don't affect what is sent or which answer is used.
-
 The client is the SDK's own, so everything the SDK offers works as before. Running the same
-requests again sends only what is not in the store.
+requests again sends only what is not in the store. Each `router.client()` call builds a new
+SDK client with its own connections: make one per model and reuse it, as above.
+
+### Labels
+
+Labels say what a request was about, in your terms, for queries later. They don't affect what
+is sent or which answer is used. They come from three places, a later one winning for the same
+key:
+
+- the router's: `Router(..., labels={"project": "evals"})`, on every request;
+- `labels(...)` around the call, as a context manager or as a decorator on a sync or async
+  function: `@labels(study="demo")`;
+- `label_headers(...)` passed with the call: `client.system_one(..., extra_headers=label_headers(item=17))`.
+
+`labels(...)` follows `await`, asyncio tasks and `asyncio.to_thread`, but not calls made in a
+`ThreadPoolExecutor` or `run_in_executor`, which don't carry context variables. Use
+`label_headers(...)` there: it goes with the request, and the gateway removes it before
+anything is sent.
 
 `models.toml` says which models there are, how the client for each is configured (endpoint,
 key, model id, provider pin) and which answers each accepts.
@@ -49,9 +64,9 @@ The gateway is an httpx transport, so it also works with a client you configure 
 ```python
 from typesafe_sdk import TypeSafeClient
 
-from decision_gateway import GatewayTransport, SQLiteStore, models
+from decision_gateway import GatewayTransport, SQLiteStore, config
 
-gateway = GatewayTransport(models.load("models.toml")["jev"], SQLiteStore("evals.sqlite"))
+gateway = GatewayTransport(config.load("models.toml")["jev"], SQLiteStore("evals.sqlite"))
 client = TypeSafeClient(model="jev-1.13", transport=gateway)
 ```
 
@@ -62,8 +77,11 @@ One store, append-only (`SQLiteStore` for now; `Store` is the interface):
 - **observations**: every response received, with what was sent, where, the response as
   received, the model and provider it reports, when, and the cost. Responses a model's
   requirements did not accept are kept too.
-- **requests**: every request made through the gateway: when, labels, model name, which observation answered it, whether it came from the store, and whether it was
-  accepted.
+- **requests**: every request made through the gateway: when, labels, model name, which
+  observation answered it, whether it came from the store, and whether it was accepted.
+
+The store's file is wherever you put it; `SQLiteStore()` without a path uses
+`$DECISION_GATEWAY_STORE`, or `store.sqlite` in the platform's user data directory.
 
 A request is answered from the store when there is an observation for the same request (the
 body as sent, to the same endpoint) that the model's requirements accept. The key is frozen by
@@ -85,17 +103,28 @@ openrouter_response_provider = "TypeSafe"                    # the provider Open
 
 A response that is not accepted is still recorded, and the call raises
 `RequirementNotMetError`. When a model changes, a new name with requirements for the new
-version uses the responses already recorded from it, without asking again. See
-`models.example.toml` for all built-ins and for writing your own.
+version uses the responses already recorded from it, without asking again.
+
+A requirement of your own is a function that returns why an observation doesn't count, or
+`None` if it does, named in `models.toml` as `"module:function"`:
+
+```python
+def max_cost(observation, at_most):
+    cost = observation.cost or 0.0
+    return None if cost <= at_most else f"cost {cost} is above {at_most}"
+```
+
+See `models.example.toml` for all built-ins and the details.
 
 ## Layout
 
 ```
 src/decision_gateway/
-  transport.py       the gateway: GatewayTransport and AsyncGatewayTransport, labels()
+  transport.py       the gateway: GatewayTransport and AsyncGatewayTransport
+  labels.py          labels() and label_headers()
   router.py          Router: SDK clients by model name, through the gateway
-  models.py          models.toml -> client configuration
-  requirements.py    built-in requirements and the base class for your own
+  config.py          models.toml -> ModelConfig: how each model's client is configured
+  requirements.py    built-in requirements; functions or Requirement subclasses of your own
   store.py           Store, SQLiteStore, Observation, RequestEvent
   key.py             the request key
   systemone.py       RoutedResponse: the SDK's response, keeping fields beyond the API
