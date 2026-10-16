@@ -1,11 +1,11 @@
 """A drop-in replacement for TypeSafe's SDK client that routes by model name and caches.
 
-    from decision_router import Cache, Router, models
+    from decision_gateway import Cache, Router, models
 
     client = Router(models.load("models.toml"), Cache())
     response = client.system_one(state=..., questions={...}, model="jev")
 
-Querying the cache: decision_router.query. Export and preheat: decision_router.cache.
+Querying the cache: decision_gateway.query. Export and preheat: decision_gateway.cache.
 """
 
 from . import models

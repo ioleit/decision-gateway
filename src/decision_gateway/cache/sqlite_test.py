@@ -1,7 +1,7 @@
 import multiprocessing as mp
 from pathlib import Path
 
-from decision_router import Cache, Record
+from decision_gateway import Cache, Record
 
 
 def rec(k: str, answer: str = "A") -> Record:

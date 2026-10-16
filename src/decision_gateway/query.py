@@ -1,6 +1,6 @@
 """Read-only SQL over cached answers, without asking any model. Needs the [query] extra (DuckDB).
 
-    from decision_router import query
+    from decision_gateway import query
     con = query.connect()                      # the live cache (SQLite file)
     con = query.connect("exports/run-1")       # an export: answers.parquet + labels.parquet
     con.sql("SELECT model, count(*) FROM answers GROUP BY model").show()
@@ -22,7 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from decision_router.cache.sqlite import COLUMNS, DEFAULT_PATH, JSON_COLUMNS
+from decision_gateway.cache.sqlite import COLUMNS, DEFAULT_PATH, JSON_COLUMNS
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -33,7 +33,7 @@ def duckdb_connect() -> DuckDBPyConnection:
     try:
         import duckdb
     except ImportError:
-        raise ImportError("decision_router.query needs DuckDB: pip install 'decision-router[query]'") from None
+        raise ImportError("decision_gateway.query needs DuckDB: pip install 'decision-gateway[query]'") from None
     return duckdb.connect()
 
 

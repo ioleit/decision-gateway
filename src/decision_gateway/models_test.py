@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from decision_router import RoutedResponse, models
-from decision_router.models import MissingKeyError, Model
-from decision_router.requirements import Asking, ResponseRequirement
+from decision_gateway import RoutedResponse, models
+from decision_gateway.models import MissingKeyError, Model
+from decision_gateway.requirements import Asking, ResponseRequirement
 
 EXAMPLE = Path(__file__).parents[2] / "models.example.toml"
 

@@ -9,9 +9,9 @@ import huggingface_hub
 import pytest
 from huggingface_hub.errors import RepositoryNotFoundError
 
-from decision_router import Cache, Router, query
-from decision_router.cache.export import PublicDatasetError, export, push
-from decision_router.testing import choice
+from decision_gateway import Cache, Router, query
+from decision_gateway.cache.export import PublicDatasetError, export, push
+from decision_gateway.testing import choice
 
 if TYPE_CHECKING:
     from pathlib import Path

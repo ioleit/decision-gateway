@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from decision_router import Cache, Router, models
+from decision_gateway import Cache, Router, models
 
 HERE = Path(__file__).parent
 QUESTIONS: list[dict[str, Any]] = json.loads((HERE / "questions.json").read_text())

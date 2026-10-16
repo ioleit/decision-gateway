@@ -2,8 +2,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from decision_router import RoutedResponse
-from decision_router.requirements import (
+from decision_gateway import RoutedResponse
+from decision_gateway.requirements import (
     Asking,
     OpenRouterResponseProvider,
     RequestDateRange,
@@ -82,8 +82,8 @@ def test_from_config_builtins_and_custom() -> None:
         {
             "systemone_response_model_id": "typesafe/jev-1.13-20260917",
             "request_date_range": ["2026-10-16T00:00:00Z", "2026-10-17T00:00:00Z"],
-            "decision_router.requirements_test:MaxProbability": {"at_most": 0.9},
-            "decision_router.requirements_test:OnlyModel": "jev",
+            "decision_gateway.requirements_test:MaxProbability": {"at_most": 0.9},
+            "decision_gateway.requirements_test:OnlyModel": "jev",
         }
     )
     assert [type(r).__name__ for r in rs] == [
@@ -103,7 +103,7 @@ def test_from_config_errors() -> None:
     with pytest.raises(ValueError, match="unknown requirement 'served'"):
         from_config({"served": "x"})
     with pytest.raises(TypeError, match="is not a RequestRequirement or ResponseRequirement"):
-        from_config({"decision_router.requirements_test:ASKING": "x"})
+        from_config({"decision_gateway.requirements_test:ASKING": "x"})
 
 
 def test_spec_is_json_with_datetimes_as_text() -> None:

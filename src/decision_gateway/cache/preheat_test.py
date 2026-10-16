@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from decision_router import Cache, Router
-from decision_router.cache.export import export
-from decision_router.cache.preheat import preheat
-from decision_router.testing import FakeServer, choice
+from decision_gateway import Cache, Router
+from decision_gateway.cache.export import export
+from decision_gateway.cache.preheat import preheat
+from decision_gateway.testing import FakeServer, choice
 
 QUESTIONS = [choice(*"ABCD"[:n], state={"case": c}) for n in (2, 3, 4) for c in range(5)]
 

@@ -3,7 +3,7 @@
 Ten yes/no questions (`questions.json`) through the router, to show how the parts fit:
 
 1. **Ask** questions 1–5. Each answer is cached with labels (`example`, `id`, `origin`).
-2. **Query** the cache with `decision_router.query`: per question and a summary, in SQL.
+2. **Query** the cache with `decision_gateway.query`: per question and a summary, in SQL.
 3. **Preheat** questions 6–10 from `golden/<model>/`: a saved export of known answers (a
    "golden" set, in testing terms), made beforehand with `make_golden.py`.
 4. **Query** again: all ten, by origin.
@@ -28,5 +28,5 @@ The same queries from the command line, on a kept cache:
 
 ```bash
 python examples/smoke/run.py --cache smoke.sqlite
-decision-router --cache smoke.sqlite query "SELECT labels->>'origin' AS origin, count(*) FROM labels GROUP BY ALL"
+decision-gateway --cache smoke.sqlite query "SELECT labels->>'origin' AS origin, count(*) FROM labels GROUP BY ALL"
 ```

@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from decision_router import Cache, Router, query
-from decision_router.testing import choice
+from decision_gateway import Cache, Router, query
+from decision_gateway.testing import choice
 
 
 @pytest.fixture

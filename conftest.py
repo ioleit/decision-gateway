@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from decision_router import Cache, Model, Router
-from decision_router.testing import FakeServer
+from decision_gateway import Cache, Model, Router
+from decision_gateway.testing import FakeServer
 
 
 @pytest.fixture

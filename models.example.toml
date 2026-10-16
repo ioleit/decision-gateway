@@ -2,7 +2,7 @@
 #
 # Copy this file to models.toml and keep the entries you need:
 #
-#     from decision_router import Cache, Router, models
+#     from decision_gateway import Cache, Router, models
 #     client = Router(models.load("models.toml"), Cache())
 #     response = client.system_one(state=..., questions={...}, model="jev")
 #
@@ -51,13 +51,13 @@
 #       keeps one run's answers to a short window, in which the model is assumed not to change.
 #
 #   "module:Class" = <value>
-#       Your own: a subclass of decision_router.requirements.RequestRequirement (checked before
+#       Your own: a subclass of decision_gateway.requirements.RequestRequirement (checked before
 #       a question is sent) or ResponseRequirement (checked on the response before it is
 #       stored). It is built from the value: a table becomes keyword arguments, anything else
 #       one argument. Its check() returns None if met, or the reason it is not. For example:
 #
-#           from decision_router import RoutedResponse
-#           from decision_router.requirements import Asking, ResponseRequirement
+#           from decision_gateway import RoutedResponse
+#           from decision_gateway.requirements import Asking, ResponseRequirement
 #
 #           class MaxProbability(ResponseRequirement):
 #               def __init__(self, at_most: float) -> None:

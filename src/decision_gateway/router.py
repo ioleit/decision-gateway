@@ -1,7 +1,7 @@
 """A drop-in replacement for TypeSafe's SDK client that routes by model name and caches.
 
     from typesafe_sdk import Noul
-    from decision_router import Cache, Router, models
+    from decision_gateway import Cache, Router, models
 
     client = Router(models.load("models.toml"), Cache())       # instead of TypeSafeClient(...)
     response = client.system_one(

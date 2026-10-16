@@ -17,7 +17,9 @@ from typing import Any, Self
 
 from .key import canonical
 
-DEFAULT_PATH = Path(os.environ.get("DECISION_ROUTER_CACHE", "~/.local/share/decision-router/cache.sqlite")).expanduser()
+DEFAULT_PATH = Path(
+    os.environ.get("DECISION_GATEWAY_CACHE", "~/.local/share/decision-gateway/cache.sqlite")
+).expanduser()
 
 COLUMNS = ("key", "model", "requirements", "request", "response", "asked_at", "cost", "provenance")
 JSON_COLUMNS = {"requirements", "request", "response", "provenance"}

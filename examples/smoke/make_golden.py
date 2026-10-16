@@ -13,8 +13,8 @@ from pathlib import Path
 
 from common import GOLDEN, HERE, labels, request, router
 
-from decision_router import Cache
-from decision_router.cache.export import export
+from decision_gateway import Cache
+from decision_gateway.cache.export import export
 
 p = argparse.ArgumentParser()
 p.add_argument("--model", default="uniform")

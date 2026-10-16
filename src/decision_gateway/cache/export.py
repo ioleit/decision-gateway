@@ -12,8 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from decision_router import query
-from decision_router.cache.sqlite import COLUMNS, DEFAULT_PATH, JSON_COLUMNS
+from decision_gateway import query
+from decision_gateway.cache.sqlite import COLUMNS, DEFAULT_PATH, JSON_COLUMNS
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -62,7 +62,7 @@ def push(out: str | Path, repo_id: str, *, private: bool = True, revision: str |
         from huggingface_hub import HfApi
         from huggingface_hub.errors import RepositoryNotFoundError
     except ImportError:
-        raise ImportError("push needs huggingface_hub: pip install 'decision-router[hub]'") from None
+        raise ImportError("push needs huggingface_hub: pip install 'decision-gateway[hub]'") from None
     api = HfApi()
     try:
         existing = api.repo_info(repo_id, repo_type="dataset")

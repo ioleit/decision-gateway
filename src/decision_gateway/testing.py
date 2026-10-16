@@ -1,7 +1,7 @@
 """Helpers for testing code that uses the router, without a network or a real model.
 
-    from decision_router import Cache, Router
-    from decision_router.testing import FakeServer, choice
+    from decision_gateway import Cache, Router
+    from decision_gateway.testing import FakeServer, choice
 
     server = FakeServer()
     router = Router({"fake": server.model("fake")}, Cache(tmp_path / "cache.sqlite"))

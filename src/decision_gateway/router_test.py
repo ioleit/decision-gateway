@@ -6,11 +6,11 @@ import pytest
 from pydantic import BaseModel
 from typesafe_sdk import Noul, SystemOneResponse, TypeSafeBadRequestError
 
-from decision_router import AsyncRouter, Cache, Model, Record, RoutedResponse, Router
-from decision_router.models import MissingKeyError
-from decision_router.requirements import RequirementNotMetError
-from decision_router.systemone import InvalidResponseError
-from decision_router.testing import FakeServer, choice
+from decision_gateway import AsyncRouter, Cache, Model, Record, RoutedResponse, Router
+from decision_gateway.models import MissingKeyError
+from decision_gateway.requirements import RequirementNotMetError
+from decision_gateway.systemone import InvalidResponseError
+from decision_gateway.testing import FakeServer, choice
 
 PAST = ["2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z"]
 

@@ -25,8 +25,8 @@ def test_jev_golden_serves_without_a_key(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.syspath_prepend(str(ROOT / "examples/smoke"))
     from common import GOLDEN, HERE, request, router
 
-    from decision_router import Cache
-    from decision_router.cache.preheat import preheat
+    from decision_gateway import Cache
+    from decision_gateway.cache.preheat import preheat
 
     with Cache(tmp_path / "cache.sqlite") as cache:
         r = router(cache)

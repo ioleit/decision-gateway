@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "decision-router"
+name = "decision-gateway"
 version = "0.0.1"
 description = "Ask decision models through one router, with a cache that never asks twice and can be queried, exported and preheated."
 readme = "README.md"
@@ -24,10 +24,10 @@ dev = [
 ]
 
 [project.scripts]
-decision-router = "decision_router.cli:main"
+decision-gateway = "decision_gateway.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/decision_router"]
+packages = ["src/decision_gateway"]
 # Tests live next to the modules (router.py, router_test.py) and stay out of the wheel.
 # schema.sql is package data; hatch includes non-Python files under the package.
 # tests/package_test.py checks both.
@@ -66,15 +66,15 @@ ignore = [
 "tests/examples_test.py" = ["S101", "PLR2004", "S603", "INP001", "PLC0415"]
 "conftest.py" = ["INP001"]
 # SQL is built from the schema's own column names and the caller's query: the query tool's job.
-"src/decision_router/cache/*.py" = ["S608"]
+"src/decision_gateway/cache/*.py" = ["S608"]
 # Optional dependencies (duckdb, huggingface_hub) and subcommands are imported when used.
-"src/decision_router/cli.py" = ["PLC0415", "T201"]
-"src/decision_router/cache/export.py" = ["PLC0415"]
-"src/decision_router/cache/preheat.py" = ["PLC0415"]
-"src/decision_router/query.py" = ["S608", "PLC0415"]
+"src/decision_gateway/cli.py" = ["PLC0415", "T201"]
+"src/decision_gateway/cache/export.py" = ["PLC0415"]
+"src/decision_gateway/cache/preheat.py" = ["PLC0415"]
+"src/decision_gateway/query.py" = ["S608", "PLC0415"]
 # Backend.call implementations get the request whether they need it or not.
-"src/decision_router/backends/*.py" = ["ARG002"]
-"src/decision_router/testing.py" = ["ARG002"]
+"src/decision_gateway/backends/*.py" = ["ARG002"]
+"src/decision_gateway/testing.py" = ["ARG002"]
 # Examples are scripts: they print, and they are not a package.
 "examples/**" = ["T201", "INP001"]
 

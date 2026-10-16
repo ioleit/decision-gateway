@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from decision_router import Cache, Router
-from decision_router.cli import main
-from decision_router.testing import choice
+from decision_gateway import Cache, Router
+from decision_gateway.cli import main
+from decision_gateway.testing import choice
 
 
 def test_query_export_preheat(tmp_path: Path, router: Router, cache: Cache, capsys: pytest.CaptureFixture[str]) -> None:

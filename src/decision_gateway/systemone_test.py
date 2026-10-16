@@ -4,7 +4,7 @@ import duckdb
 import pytest
 from typesafe_sdk import Choice, Noul, Question
 
-from decision_router.systemone import (
+from decision_gateway.systemone import (
     InvalidRequestError,
     InvalidResponseError,
     NotCacheableError,

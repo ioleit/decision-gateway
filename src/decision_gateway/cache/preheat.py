@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from decision_router import query
-from decision_router.cache.sqlite import COLUMNS, Cache
+from decision_gateway import query
+from decision_gateway.cache.sqlite import COLUMNS, Cache
 
 BATCH = 10_000
 
@@ -22,7 +22,7 @@ def download(source: str, revision: str | None = None) -> Path:
     try:
         from huggingface_hub import snapshot_download
     except ImportError:
-        raise ImportError("hf:// sources need huggingface_hub: pip install 'decision-router[hub]'") from None
+        raise ImportError("hf:// sources need huggingface_hub: pip install 'decision-gateway[hub]'") from None
     repo_id = source.removeprefix("hf://")
     return Path(
         snapshot_download(

@@ -1,12 +1,12 @@
-"""decision-router query | export | preheat
+"""decision-gateway query | export | preheat
 
-    decision-router query "SELECT model, count(*) FROM answers GROUP BY model"
-    decision-router query --source exports/run-1 "SELECT ..."
-    decision-router export exports/run-1 --keys "SELECT key FROM answers WHERE model = 'uniform'"
-    decision-router export exports/run-1 --push you/decision-answers
-    decision-router preheat hf://you/decision-answers
+    decision-gateway query "SELECT model, count(*) FROM answers GROUP BY model"
+    decision-gateway query --source exports/run-1 "SELECT ..."
+    decision-gateway export exports/run-1 --keys "SELECT key FROM answers WHERE model = 'uniform'"
+    decision-gateway export exports/run-1 --push you/decision-answers
+    decision-gateway preheat hf://you/decision-answers
 
-The cache is $DECISION_ROUTER_CACHE, or ~/.local/share/decision-router/cache.sqlite; --cache overrides.
+The cache is $DECISION_GATEWAY_CACHE, or ~/.local/share/decision-gateway/cache.sqlite; --cache overrides.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="decision-router", description=__doc__.split("\n\n")[0])
+    p = argparse.ArgumentParser(prog="decision-gateway", description=__doc__.split("\n\n")[0])
     p.add_argument("--cache", default=str(DEFAULT_PATH), help="the cache file (default: %(default)s)")
     sub = p.add_subparsers(dest="command", required=True)
 

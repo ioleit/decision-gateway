@@ -1,6 +1,6 @@
 """The key format is frozen: these hashes must never change, or exported caches stop hitting."""
 
-from decision_router.cache.key import canonical, key
+from decision_gateway.cache.key import canonical, key
 
 
 def test_golden() -> None:

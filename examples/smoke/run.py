@@ -12,8 +12,8 @@ from pathlib import Path
 
 from common import HERE, LIVE, QUESTIONS, labels, request, router
 
-from decision_router import Cache, query
-from decision_router.cache.preheat import preheat
+from decision_gateway import Cache, query
+from decision_gateway.cache.preheat import preheat
 
 PER_QUESTION = """
     SELECT CAST(l.labels->>'id' AS INT)           AS id,
