@@ -73,9 +73,10 @@ class ModelConfig:
             self.transport = UniformTransport()
         self.requirements: list[constraints.Constraint] = constraints.from_config(self.requirements_table)
 
-    def client_options(self) -> dict[str, Any]:
-        """Keyword arguments for TypeSafeClient and AsyncTypeSafeClient, without the transport."""
-        if self.key_env is None:
+    def client_options(self, *, cache_only: bool = False) -> dict[str, Any]:
+        """Keyword arguments for TypeSafeClient and AsyncTypeSafeClient, without the transport.
+        cache_only: nothing is sent, so no key is needed."""
+        if self.key_env is None or cache_only:
             api_key = "none"
         elif not (api_key := os.environ.get(self.key_env, "")):
             raise MissingKeyError(f"{self.name} needs {self.key_env} in the environment")
@@ -90,18 +91,20 @@ class ModelConfig:
             options["retry"] = RetryPolicy(max_retries=self.max_retries)
         return options
 
-    def client(self, store: Store, labels: dict[str, Any] | None = None) -> TypeSafeClient:
+    def client(self, store: Store, labels: dict[str, Any] | None = None, *, cache_only: bool = False) -> TypeSafeClient:
         """A TypeSafeClient for this model whose requests go through the gateway, recorded with
-        these labels."""
+        these labels. cache_only: answered from the store only, nothing is sent."""
         transport: httpx2.BaseTransport | None = self.transport
-        gateway = GatewayTransport(self, store, labels, transport=transport)
-        return TypeSafeClient(**self.client_options(), transport=gateway)
+        gateway = GatewayTransport(self, store, labels, transport=transport, cache_only=cache_only)
+        return TypeSafeClient(**self.client_options(cache_only=cache_only), transport=gateway)
 
-    def async_client(self, store: Store, labels: dict[str, Any] | None = None) -> AsyncTypeSafeClient:
+    def async_client(
+        self, store: Store, labels: dict[str, Any] | None = None, *, cache_only: bool = False
+    ) -> AsyncTypeSafeClient:
         """An AsyncTypeSafeClient for this model whose requests go through the gateway."""
         transport: httpx2.AsyncBaseTransport | None = self.transport
-        gateway = AsyncGatewayTransport(self, store, labels, transport=transport)
-        return AsyncTypeSafeClient(**self.client_options(), transport=gateway)
+        gateway = AsyncGatewayTransport(self, store, labels, transport=transport, cache_only=cache_only)
+        return AsyncTypeSafeClient(**self.client_options(cache_only=cache_only), transport=gateway)
 
 
 def load(path: str | Path) -> dict[str, ModelConfig]:

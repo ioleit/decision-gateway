@@ -5,7 +5,15 @@ import httpx2
 import pytest
 from typesafe_sdk import RetryPolicy, TypeSafeInternalServerError
 
-from decision_gateway import ConstraintViolatedError, Gateway, ModelConfig, RoutedResponse, SQLiteStore, labels
+from decision_gateway import (
+    CacheMissError,
+    ConstraintViolatedError,
+    Gateway,
+    ModelConfig,
+    RoutedResponse,
+    SQLiteStore,
+    labels,
+)
 from decision_gateway.testing import FakeTransport, choice
 from decision_gateway.transports.gateway_transport import GatewayTransport
 
@@ -211,3 +219,31 @@ def test_a_custom_retry_policy_still_applies(store: SQLiteStore, fake: FakeTrans
     with pytest.raises(TypeSafeInternalServerError):
         client.system_one(**choice("A", "B"), retry=RetryPolicy(max_retries=0))
     assert fake.calls == 1
+
+
+def test_cache_only_answers_from_the_store_and_sends_nothing(store: SQLiteStore, fake: FakeTransport) -> None:
+    Gateway({"m": fake.model("m")}, store).client("m").system_one(**choice("A", "B"))
+    cached = Gateway({"m": fake.model("m")}, store, cache_only=True).client("m")
+    assert cached.system_one(**choice("A", "B")).answers["pick"].choice == "A"
+    with pytest.raises(CacheMissError, match="not in the store"):
+        cached.system_one(**choice("A", "C"))
+    assert fake.calls == 1
+    assert rows(store, "SELECT hit FROM requests ORDER BY at") == [(0,), (1,)]  # the miss is not recorded
+
+
+def test_cache_only_needs_no_key_and_lets_nothing_through(store: SQLiteStore, fake: FakeTransport) -> None:
+    model = fake.model("m", key_env="NO_SUCH_KEY")
+    client = Gateway({"m": model}, store, cache_only=True).client("m")
+    with pytest.raises(CacheMissError, match="not a System One request"):
+        client.models.list()
+    assert fake.calls == 0
+
+
+def test_cache_only_async(store: SQLiteStore, fake: FakeTransport) -> None:
+    async def ask() -> None:
+        async with Gateway({"m": fake.model("m")}, store, cache_only=True).async_client("m") as client:
+            await client.system_one(**choice("A", "B"))
+
+    with pytest.raises(CacheMissError):
+        asyncio.run(ask())
+    assert fake.calls == 0

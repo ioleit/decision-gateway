@@ -16,10 +16,11 @@ from decision_gateway.gateway import Gateway
 from decision_gateway.labels import label_headers, labels
 from decision_gateway.store import Observation, RequestEvent, SQLiteStore, Store
 from decision_gateway.systemone import RoutedResponse
-from decision_gateway.transports.gateway_transport import AsyncGatewayTransport, GatewayTransport
+from decision_gateway.transports.gateway_transport import AsyncGatewayTransport, CacheMissError, GatewayTransport
 
 __all__ = [
     "AsyncGatewayTransport",
+    "CacheMissError",
     "Constraint",
     "ConstraintViolatedError",
     "Gateway",
