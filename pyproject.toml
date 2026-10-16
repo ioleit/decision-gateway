@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "decision-router"
+version = "0.0.1"
+description = "Ask decision models through one router, with a cache that never asks twice and can be queried, exported and preheated."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+query = ["duckdb>=1.1"]
+hub = ["duckdb>=1.1", "huggingface_hub>=0.25"]
+dev = ["duckdb>=1.1", "huggingface_hub>=0.25", "pytest>=8", "build"]
+
+[project.scripts]
+decision-router = "decision_router.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/decision_router"]
+# schema.sql is package data; hatch includes non-Python files under the package,
+# and tests/test_package.py checks the built wheel for it.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

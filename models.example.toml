@@ -1,0 +1,15 @@
+# Copy to models.toml. One table per model; `backend` says how it is reached.
+
+[models.uniform]
+backend = "uniform"   # equal probability for every option; no network, no cost
+# version = "uniform/1"   # the backend's own version if left out
+# cache = false           # always asked, never stored
+
+# Through OpenRouter (needs OPENROUTER_API_KEY when a new question is asked).
+# `version` goes into the cache key; `served` is the dated id every answer must report.
+# [models.jev]
+# backend = "openrouter"
+# model = "typesafe/jev-1.13"
+# provider = { only = ["typesafe"], allow_fallbacks = false }
+# version = "openrouter:typesafe/jev-1.13-20260917@typesafe"
+# served = "typesafe/jev-1.13-20260917"

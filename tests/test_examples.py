@@ -1,0 +1,28 @@
+"""The examples run as documented."""
+
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent
+
+
+def test_smoke_example():
+    out = subprocess.run([sys.executable, str(ROOT / "examples/smoke/run.py")], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert "1. asked uniform 5 new question(s) of 5" in out.stdout
+    assert "2. preheated 5 answer(s)" in out.stdout
+    assert "3. all 10 again: 0 new question(s) asked" in out.stdout
+
+
+def test_jev_golden_serves_without_a_key(tmp_path, monkeypatch):
+    """Real Jev answers (asked 2026-10-16), preheated: served with no key and no network."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.syspath_prepend(str(ROOT / "examples/smoke"))
+    from common import GOLDEN, HERE, request, router
+    from decision_router.cache.preheat import preheat
+
+    r = router(tmp_path / "cache.sqlite")
+    assert preheat(HERE / "golden" / "jev", r.cache) == (5, 5)
+    for q in GOLDEN:
+        assert r.ask("jev", request(q))["model"] == "typesafe/jev-1.13-20260917"
