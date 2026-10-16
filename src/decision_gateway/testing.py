@@ -1,11 +1,11 @@
 """Helpers for testing code that uses the router, without a network or a real model.
 
-    from decision_gateway import Cache, Router
+    from decision_gateway import Router, SQLiteStore
     from decision_gateway.testing import FakeServer, choice
 
     server = FakeServer()
-    router = Router({"fake": server.model("fake")}, Cache(tmp_path / "cache.sqlite"))
-    router.system_one(**choice("A", "B"), model="fake")
+    router = Router({"fake": server.model("fake")}, SQLiteStore(tmp_path / "store.sqlite"))
+    router.client("fake").system_one(**choice("A", "B"))
     assert server.calls == 1
 
 FakeServer is an HTTP transport for the TypeSafe SDK: requests go through the real SDK client,
@@ -25,11 +25,11 @@ from . import uniform
 from .models import Model
 
 if TYPE_CHECKING:
-    from .systemone import JSONObject
+    JSONObject = dict[str, Any]
 
 
 def choice(*options: str, state: JSONObject | None = None) -> JSONObject:
-    """system_one arguments for one choice question, "pick", between the given options."""
+    """system_one arguments: one choice question, "pick", between the given options."""
     return {
         "state": state or {"case": 1},
         "questions": {"pick": {"type": "choice", "criteria": {o: o for o in options}}},
@@ -53,6 +53,7 @@ class FakeServer:
 
     def model(self, name: str, **fields: Any) -> Model:  # noqa: ANN401 (models.toml fields)
         """A models.toml entry for a model served by this server."""
+        fields.setdefault("base_url", f"http://{name}.fake.invalid")
         return Model(name=name, backend="uniform", transport=self.transport, **fields)
 
     def _handle(self, request: httpx2.Request) -> httpx2.Response:

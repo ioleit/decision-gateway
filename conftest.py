@@ -5,23 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from decision_gateway import Cache, Model, Router
+from decision_gateway import SQLiteStore
 from decision_gateway.testing import FakeServer
 
 
 @pytest.fixture
-def cache(tmp_path: Path) -> Iterator[Cache]:
-    c = Cache(tmp_path / "cache.sqlite")
-    yield c
-    c.close()
+def store(tmp_path: Path) -> Iterator[SQLiteStore]:
+    s = SQLiteStore(tmp_path / "store.sqlite")
+    yield s
+    s.close()
 
 
 @pytest.fixture
 def server() -> FakeServer:
     return FakeServer()
-
-
-@pytest.fixture
-def router(cache: Cache, server: FakeServer) -> Iterator[Router]:
-    with Router({"fake": server.model("fake"), "uniform": Model(name="uniform", backend="uniform")}, cache) as r:
-        yield r

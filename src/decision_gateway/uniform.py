@@ -18,6 +18,8 @@ from typing import Any
 
 import httpx2
 
+BASE_URL = "http://uniform.invalid"  # where uniform models are configured to send; never reached
+
 
 def answer(question: dict[str, Any]) -> dict[str, Any]:
     kind = question["type"]

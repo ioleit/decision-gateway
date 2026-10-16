@@ -1,119 +1,104 @@
 # decision-gateway
 
-A drop-in replacement for TypeSafe's SDK client ([`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/))
-for System One decision models such as Jev. It routes each request by model name to a
-configured SDK client, and caches the answers, so the same question is never asked twice.
+A gateway for System One decision models such as Jev, under TypeSafe's SDK client
+([`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/)). Requests from the SDK client go
+through it: they are routed by model name, answered from the store when the same request was
+answered before, and recorded.
 
 Status: early. Models are reached through TypeSafe's API, OpenRouter, any System One server,
-or `uniform`, a local baseline that gives every option equal probability. `examples/smoke`
-walks through asking, querying and preheating, with uniform or live with Jev through
-OpenRouter.
-
-## Parts
-
-- **Router**: `Router.system_one(...)` takes the same arguments as `TypeSafeClient.system_one`
-  and returns the same response. `model` is a name in `models.toml`, which says how the SDK
-  client for it is configured. `AsyncRouter` does the same for `AsyncTypeSafeClient`.
-- **Cache**: one SQLite file (WAL), shared by every process on a machine. An answer is keyed
-  by the model's name, its requirements and the request body as sent, and is final.
-- **Requirements**: reject responses that don't come from the model a name stands for (see
-  `models.example.toml`).
-- **Labels**: what a question is about, in the caller's terms: any JSON object, several per
-  answer. Never part of the key and never used to find an answer; only for queries.
-- **Query** (`decision_gateway.query`): read-only SQL with DuckDB over the cache or an export,
-  without asking any model. A Python library first, with a CLI on top.
-- **Export / preheat**: write the answers a query selects to parquet (and a Hugging Face
-  dataset), and load such an export into a cache, for instance to serve a deployment that never
-  calls a model.
+or `uniform`, a local baseline that gives every option equal probability.
 
 ## Install
 
 ```bash
-pip install -e .            # router and cache; brings typesafe-sdk (pydantic, httpx2, ...)
-pip install -e '.[query]'   # + DuckDB, for query and export
-pip install -e '.[hub]'     # + huggingface_hub, for push and hf:// preheat
-pip install -e '.[dev]'     # + pytest, build, ruff, mypy (and DuckDB, huggingface_hub)
+pip install decision-gateway
 ```
 
 ## Use
 
-Where code uses the SDK's client:
-
 ```python
-from typesafe_sdk import Noul, TypeSafeClient
+from typesafe_sdk import Noul
 
-state = "I was charged twice for my subscription."
-questions = {"refund": Noul(instructions="Is the customer asking for money back?")}
+from decision_gateway import Router, SQLiteStore, labels, models
 
-client = TypeSafeClient(model="jev-1.13")
-response = client.system_one(state=state, questions=questions)
+router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), project="evals", run="2026-10")
+client = router.client("jev")  # a typesafe_sdk.TypeSafeClient; router.async_client() for async
+
+with labels(item=17):
+    response = client.system_one(
+        state="I was charged twice for my subscription.",
+        questions={"refund": Noul(instructions="Is the customer asking for money back?")},
+    )
+response.nouls["refund"].noul
 ```
 
-the router takes its place:
+The client is the SDK's own, so everything the SDK offers works as before. Running the same
+requests again sends only what is not in the store.
 
-```python
-from decision_gateway import Cache, Router, models
-
-client = Router(models.load("models.toml"), Cache(), default_model="jev")
-response = client.system_one(state=state, questions=questions)
-response.nouls["refund"].noul  # the SDK's SystemOneResponse (a subclass of it)
-
-client.system_one(state=state, questions=questions, model="uniform", labels={"study": "demo"})
-client.cached(state=state, questions=questions)  # from the cache only; None if not there
-```
-
-Fields a server adds beyond the System One API, such as OpenRouter's `provider`, are kept in
-`response.model_extra`. Requests with assets (images) are sent but not cached yet.
-
-`models.toml` says which models there are and how each is reached.
+`models.toml` says which models there are, how the client for each is configured (endpoint,
+key, model id, provider pin) and which answers each accepts.
 [`models.example.toml`](models.example.toml) describes every field, with examples; copy it to
 start.
 
+The gateway is an httpx transport, so it also works with a client you configure yourself:
+
 ```python
-from decision_gateway import query
+from typesafe_sdk import TypeSafeClient
 
-con = query.connect()  # the cache; or query.connect("exports/run-1")
-con.sql("""SELECT model, labels->>'task' AS task, count(*) AS n
-           FROM answers JOIN labels USING (key) GROUP BY ALL""").show()
+from decision_gateway import GatewayTransport, SQLiteStore, models
+
+gateway = GatewayTransport(models.load("models.toml")["jev"], SQLiteStore("evals.sqlite"))
+client = TypeSafeClient(model="jev-1.13", transport=gateway)
 ```
 
-```bash
-decision-gateway query "SELECT model, count(*) FROM answers GROUP BY ALL"
-decision-gateway export exports/run-1 --keys "SELECT key FROM answers WHERE model = 'uniform'"
-decision-gateway export exports/run-1 --push you/decision-answers      # private by default
-decision-gateway preheat hf://you/decision-answers
+## What is recorded
+
+One store, append-only (`SQLiteStore` for now; `Store` is the interface):
+
+- **observations**: every response received, with what was sent, where, the response as
+  received, the model and provider it reports, when, and the cost. Responses a model's
+  requirements did not accept are kept too.
+- **requests**: every request made through the gateway: when, project, run, labels, model
+  name, which observation answered it, whether it came from the store, and whether it was
+  accepted.
+
+A request is answered from the store when there is an observation for the same request (the
+body as sent, to the same endpoint) that the model's requirements accept. The key is frozen by
+golden hashes (`src/decision_gateway/key_test.py`).
+
+Errors (HTTP errors, timeouts) are raised by the SDK as usual and not recorded. Requests with
+assets (images) are sent but not recorded yet.
+
+## Requirements
+
+Which answers a model name accepts. Used to prevent different models served by the same
+backend configuration from sharing answers, for example minor updates without a version jump:
+
+```toml
+[models.jev.requirements]
+systemone_response_model_id = "typesafe/jev-1.13-20260917"   # the model the response reports
+openrouter_response_provider = "TypeSafe"                    # the provider OpenRouter reports
 ```
 
-The cache is `~/.local/share/decision-gateway/cache.sqlite`, or `$DECISION_GATEWAY_CACHE`, or
-`--cache`. Reading it from DuckDB uses DuckDB's `sqlite` extension, which DuckDB downloads on
-first use.
-
-## The cache key
-
-`sha256(json.dumps([model, requirements, request], sort_keys=True, ensure_ascii=False))`:
-the model's name in `models.toml`, its `requirements` table as written, and the request body as
-the SDK sends it. The name stands for one configuration (model id, provider pin and
-requirements): answers are shared by every project that uses the same name for the same
-configuration, and renaming an entry starts a new set of answers.
-
-The format is frozen by golden hashes (`src/decision_gateway/cache/key_test.py`), so an
-export preheats any cache to the same hits.
+A response that is not accepted is still recorded, and the call raises
+`RequirementNotMetError`. When a model changes, a new name with requirements for the new
+version uses the responses already recorded from it, without asking again. See
+`models.example.toml` for all built-ins and for writing your own.
 
 ## Layout
 
 ```
 src/decision_gateway/
-  router.py          Router and AsyncRouter: system_one routed by name, cached
-  models.py          models.toml -> configured TypeSafe SDK clients
-  systemone.py       the request body as sent, the response type, checks
-  requirements.py    built-in requirements and the base classes for your own
-  uniform.py         the uniform baseline, as a local transport for the SDK
-  cache/             key.py, schema.sql, sqlite.py, export.py, preheat.py
-  query.py           DuckDB over a cache file or an export
-  cli.py             decision-gateway query | export | preheat
-  testing.py         FakeServer (a transport for the SDK) and request helpers, for tests
-tests/               tests that span the package: the built wheel, the examples
-examples/smoke/      ten yes/no questions: ask 5, query, preheat 5 from golden/, ask all again
+  transport.py       the gateway: GatewayTransport and AsyncGatewayTransport, labels()
+  router.py          Router: SDK clients by model name, through the gateway
+  models.py          models.toml -> client configuration
+  requirements.py    built-in requirements and the base class for your own
+  store.py           Store, SQLiteStore, Observation, RequestEvent
+  key.py             the request key
+  systemone.py       RoutedResponse: the SDK's response, keeping fields beyond the API
+  uniform.py         the uniform baseline, as a local transport
+  testing.py         FakeServer (a transport) and request helpers, for tests
+tests/               tests that span the package (the built wheel)
 ```
 
 Each module's unit tests sit next to it (`router.py`, `router_test.py`), one of the two layouts

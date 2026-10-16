@@ -2,62 +2,52 @@ from datetime import UTC, datetime
 
 import pytest
 
-from decision_gateway import RoutedResponse
 from decision_gateway.requirements import (
     Asking,
     OpenRouterResponseProvider,
     RequestDateRange,
-    RequestRequirement,
-    ResponseRequirement,
+    Requirement,
     SystemOneResponseModelId,
+    first_rejection,
     from_config,
-    spec,
 )
+from decision_gateway.store import Observation
 
 NOW = datetime(2026, 10, 16, 12, 0, tzinfo=UTC)
-ASKING = Asking(model="jev", wire={}, now=NOW)
 
 
-class MaxProbability(ResponseRequirement):
+def observed(model: str = "m", provider: str | None = None, at: datetime = NOW) -> Observation:
+    response: dict[str, object] = {"model": model, "answers": {}, "usage": {}}
+    if provider is not None:
+        response["provider"] = provider
+    return Observation("o1", "k", "http://x/v1/systemone", {}, response, at)
+
+
+class MaxCost(Requirement):
     """A custom requirement, as a user would write one: loaded by "module:Class"."""
 
     def __init__(self, at_most: float) -> None:
         self.at_most = at_most
 
-    def check(self, asking: Asking, response: RoutedResponse) -> str | None:  # noqa: ARG002
-        top = max(p for c in response.choices.values() for p in c.probabilities.values())
-        return None if top <= self.at_most else f"a probability of {top} is above {self.at_most}"
-
-
-class OnlyModel(RequestRequirement):
-    def __init__(self, model: str) -> None:
-        self.model = model
-
-    def check(self, asking: Asking) -> str | None:
-        return None if asking.model == self.model else f"only for {self.model}"
-
-
-def answered(model: str, provider: str | None = None) -> RoutedResponse:
-    """A response as OpenRouter would give it."""
-    response: dict[str, object] = {"model": model, "answers": {"q": {"type": "noul", "noul": 0.5}}, "usage": {}}
-    if provider is not None:
-        response["provider"] = provider
-    return RoutedResponse.model_validate(response)
+    def accepts(self, observation: Observation) -> str | None:
+        cost = observation.cost or 0.0
+        return None if cost <= self.at_most else f"cost {cost} is above {self.at_most}"
 
 
 def test_systemone_response_model_id() -> None:
     r = SystemOneResponseModelId("typesafe/jev-1.13-20260917")
-    assert r.check(ASKING, answered("typesafe/jev-1.13-20260917")) is None
-    assert r.check(ASKING, answered("typesafe/jev-1.14-20261101")) == (
+    assert r.accepts(observed("typesafe/jev-1.13-20260917")) is None
+    assert r.accepts(observed("typesafe/jev-1.14-20261101")) == (
         "served by 'typesafe/jev-1.14-20261101', not 'typesafe/jev-1.13-20260917'"
     )
+    assert r.allows_sending(Asking("jev", {}, NOW)) is None
 
 
 def test_openrouter_response_provider() -> None:
     r = OpenRouterResponseProvider("TypeSafe")
-    assert r.check(ASKING, answered("m", provider="TypeSafe")) is None
-    assert r.check(ASKING, answered("m", provider="Other")) == "served by provider 'Other', not 'TypeSafe'"
-    assert r.check(ASKING, answered("m")) == "served by provider None, not 'TypeSafe'"
+    assert r.accepts(observed(provider="TypeSafe")) is None
+    assert r.accepts(observed(provider="Other")) == "served by provider 'Other', not 'TypeSafe'"
+    assert r.accepts(observed()) == "served by provider None, not 'TypeSafe'"
 
 
 @pytest.mark.parametrize(
@@ -72,40 +62,33 @@ def test_openrouter_response_provider() -> None:
 )
 def test_request_date_range(range_: list[datetime | str]) -> None:
     r = RequestDateRange(range_)
-    assert r.check(ASKING) is None
-    later = Asking(model="jev", wire={}, now=datetime(2026, 10, 17, 0, 0, 1, tzinfo=UTC))
-    assert r.check(later) == "new questions may be sent only between 2026-10-16T00:00:00Z and 2026-10-17T00:00:00Z"
+    later = datetime(2026, 10, 17, 0, 0, 1, tzinfo=UTC)
+    assert r.accepts(observed(at=NOW)) is None
+    assert r.accepts(observed(at=later)) == (
+        "asked at 2026-10-17T00:00:01Z, outside 2026-10-16T00:00:00Z to 2026-10-17T00:00:00Z"
+    )
+    assert r.allows_sending(Asking("m", {}, NOW)) is None
+    assert r.allows_sending(Asking("m", {}, later)) == (
+        "now is 2026-10-17T00:00:01Z, outside 2026-10-16T00:00:00Z to 2026-10-17T00:00:00Z"
+    )
 
 
 def test_from_config_builtins_and_custom() -> None:
     rs = from_config(
         {
-            "systemone_response_model_id": "typesafe/jev-1.13-20260917",
+            "systemone_response_model_id": "m",
             "request_date_range": ["2026-10-16T00:00:00Z", "2026-10-17T00:00:00Z"],
-            "decision_gateway.requirements_test:MaxProbability": {"at_most": 0.9},
-            "decision_gateway.requirements_test:OnlyModel": "jev",
+            "decision_gateway.requirements_test:MaxCost": {"at_most": 0.01},
         }
     )
-    assert [type(r).__name__ for r in rs] == [
-        "SystemOneResponseModelId",
-        "RequestDateRange",
-        "MaxProbability",
-        "OnlyModel",
-    ]
-    custom = rs[2]
-    assert isinstance(custom, MaxProbability)
-    probable = {"type": "choice", "choice": "A", "confidence": 0.95, "probabilities": {"A": 0.95, "B": 0.05}}
-    response = RoutedResponse.model_validate({"model": "m", "answers": {"q": probable}, "usage": {}})
-    assert custom.check(ASKING, response) == ("a probability of 0.95 is above 0.9")
+    assert [type(r).__name__ for r in rs] == ["SystemOneResponseModelId", "RequestDateRange", "MaxCost"]
+    assert first_rejection(rs, observed()) is None
+    expensive = Observation("o2", "k", "http://x", {}, {"model": "m"}, NOW, cost=0.5)
+    assert first_rejection(rs, expensive) == "cost 0.5 is above 0.01 (MaxCost)"
 
 
 def test_from_config_errors() -> None:
     with pytest.raises(ValueError, match="unknown requirement 'served'"):
         from_config({"served": "x"})
-    with pytest.raises(TypeError, match="is not a RequestRequirement or ResponseRequirement"):
-        from_config({"decision_gateway.requirements_test:ASKING": "x"})
-
-
-def test_spec_is_json_with_datetimes_as_text() -> None:
-    table = {"request_date_range": [datetime(2026, 10, 16, tzinfo=UTC), "2026-10-17T00:00:00Z"], "x:Y": {"a": 1}}
-    assert spec(table) == {"request_date_range": ["2026-10-16T00:00:00Z", "2026-10-17T00:00:00Z"], "x:Y": {"a": 1}}
+    with pytest.raises(TypeError, match="is not a Requirement"):
+        from_config({"decision_gateway.requirements_test:NOW": "x"})

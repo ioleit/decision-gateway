@@ -1,17 +1,34 @@
-"""A drop-in replacement for TypeSafe's SDK client that routes by model name and caches.
+"""A gateway for TypeSafe's System One API: requests from the SDK client go through it, are
+routed by model name, answered from what is already known, and recorded.
 
-    from decision_gateway import Cache, Router, models
+    from decision_gateway import Router, SQLiteStore, models
 
-    client = Router(models.load("models.toml"), Cache())
-    response = client.system_one(state=..., questions={...}, model="jev")
-
-Querying the cache: decision_gateway.query. Export and preheat: decision_gateway.cache.
+    router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), project="evals")
+    client = router.client("jev")                 # a typesafe_sdk.TypeSafeClient
+    with labels(item=17):
+        client.system_one(state=..., questions={...})
 """
 
 from . import models
-from .cache import Cache, Record
 from .models import Model
-from .router import AsyncRouter, Router
+from .requirements import Requirement, RequirementNotMetError
+from .router import Router
+from .store import Observation, RequestEvent, SQLiteStore, Store
 from .systemone import RoutedResponse
+from .transport import AsyncGatewayTransport, GatewayTransport, labels
 
-__all__ = ["AsyncRouter", "Cache", "Model", "Record", "RoutedResponse", "Router", "models"]
+__all__ = [
+    "AsyncGatewayTransport",
+    "GatewayTransport",
+    "Model",
+    "Observation",
+    "RequestEvent",
+    "Requirement",
+    "RequirementNotMetError",
+    "RoutedResponse",
+    "Router",
+    "SQLiteStore",
+    "Store",
+    "labels",
+    "models",
+]

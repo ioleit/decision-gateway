@@ -1,5 +1,5 @@
-"""models.toml: the models the router can ask, by name. Each name routes to a configured
-TypeSafe SDK client. models.example.toml at the top of the repository describes every field.
+"""models.toml: the models, by name, and how the TypeSafe SDK client for each is configured.
+models.example.toml at the top of the repository describes every field.
 """
 
 from __future__ import annotations
@@ -13,20 +13,23 @@ from typing import TYPE_CHECKING, Any
 from typesafe_sdk import AsyncTypeSafeClient, RetryPolicy, TypeSafeClient
 
 from . import requirements, uniform
+from .transport import AsyncGatewayTransport, GatewayTransport
 
 if TYPE_CHECKING:
     import httpx2
+
+    from .store import Store
 
 # Defaults per backend: where the SDK sends requests, which variable holds the key, compression.
 BACKENDS: dict[str, dict[str, Any]] = {
     "typesafe": {"base_url": None, "key_env": "TYPESAFE_API_KEY", "compression": None},
     "openrouter": {"base_url": "https://openrouter.ai/api", "key_env": "OPENROUTER_API_KEY", "compression": False},
-    "uniform": {"base_url": None, "key_env": None, "compression": False},
+    "uniform": {"base_url": uniform.BASE_URL, "key_env": None, "compression": False},
 }
 
 FIELDS = {
-    "backend", "model", "display_name", "base_url", "key_env", "extra_body", "compression", "timeout", "max_retries",
-    "cache", "requirements",
+    "backend", "model", "display_name", "base_url", "key_env", "extra_body", "extra_headers", "compression",
+    "timeout", "max_retries", "cache", "requirements",
 }  # fmt: skip
 
 
@@ -36,21 +39,22 @@ class MissingKeyError(Exception):
 
 @dataclass
 class Model:
-    """One entry of models.toml: how a name is routed to a TypeSafe SDK client."""
+    """One entry of models.toml."""
 
     name: str
     backend: str = "typesafe"
-    model: str = ""  # the id sent as the request's `model`; default: the name
+    model: str = ""  # the model id the client sends by default; default: the name
     display_name: str = ""  # default: the name
     base_url: str | None = None
     key_env: str | None = None
-    extra_body: dict[str, Any] = field(default_factory=dict)  # merged into every request, e.g. a provider pin
+    extra_body: dict[str, Any] = field(default_factory=dict)  # added to every request body, e.g. a provider pin
+    extra_headers: dict[str, str] = field(default_factory=dict)
     compression: bool | None = None  # False: off; None: the backend's default
     timeout: float | None = None
     max_retries: int | None = None
-    cache: bool = True
+    cache: bool = True  # False: always ask (answers are still recorded)
     requirements_table: dict[str, Any] = field(default_factory=dict)
-    transport: httpx2.BaseTransport | None = None  # an httpx2 transport, for tests; uniform brings its own
+    transport: Any = None  # an httpx2 transport to send through instead of the network (tests, uniform)
 
     def __post_init__(self) -> None:
         if self.backend not in BACKENDS:
@@ -66,31 +70,35 @@ class Model:
         if self.backend == "uniform" and self.transport is None:
             self.transport = uniform.transport()
         self.requirements: list[requirements.Requirement] = requirements.from_config(self.requirements_table)
-        self.requirements_spec = requirements.spec(self.requirements_table)  # as written, for the cache key
 
     def client_options(self) -> dict[str, Any]:
-        """Keyword arguments for TypeSafeClient and AsyncTypeSafeClient. Reads the API key, so it
-        is called only when a question is not in the cache."""
+        """Keyword arguments for TypeSafeClient and AsyncTypeSafeClient, without the transport."""
         if self.key_env is None:
             api_key = "none"
         elif not (api_key := os.environ.get(self.key_env, "")):
-            raise MissingKeyError(f"{self.name} needs {self.key_env} in the environment to ask new questions")
+            raise MissingKeyError(f"{self.name} needs {self.key_env} in the environment")
         options: dict[str, Any] = {"api_key": api_key, "model": self.model, "base_url": self.base_url}
+        if self.extra_headers:
+            options["headers"] = self.extra_headers
         if self.compression is False:
             options["compression"] = False
         if self.timeout is not None:
             options["timeout"] = self.timeout
         if self.max_retries is not None:
             options["retry"] = RetryPolicy(max_retries=self.max_retries)
-        if self.transport is not None:
-            options["transport"] = self.transport
         return options
 
-    def client(self) -> TypeSafeClient:
-        return TypeSafeClient(**self.client_options())
+    def client(self, store: Store, project: str | None = None, run: str | None = None) -> TypeSafeClient:
+        """A TypeSafeClient for this model whose requests go through the gateway."""
+        transport: httpx2.BaseTransport | None = self.transport
+        gateway = GatewayTransport(self, store, project, run, transport=transport)
+        return TypeSafeClient(**self.client_options(), transport=gateway)
 
-    def async_client(self) -> AsyncTypeSafeClient:
-        return AsyncTypeSafeClient(**self.client_options())
+    def async_client(self, store: Store, project: str | None = None, run: str | None = None) -> AsyncTypeSafeClient:
+        """An AsyncTypeSafeClient for this model whose requests go through the gateway."""
+        transport: httpx2.AsyncBaseTransport | None = self.transport
+        gateway = AsyncGatewayTransport(self, store, project, run, transport=transport)
+        return AsyncTypeSafeClient(**self.client_options(), transport=gateway)
 
 
 def load(path: str | Path) -> dict[str, Model]:

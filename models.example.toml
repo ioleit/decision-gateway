@@ -1,39 +1,40 @@
-# models.toml: the models the router can ask, by name.
+# models.toml: the models, by name, and how the TypeSafe SDK client for each is configured.
 #
 # Copy this file to models.toml and keep the entries you need:
 #
-#     from decision_gateway import Cache, Router, models
-#     client = Router(models.load("models.toml"), Cache())
-#     response = client.system_one(state=..., questions={...}, model="jev")
+#     from decision_gateway import Router, SQLiteStore, labels, models
 #
-# The router is a drop-in replacement for TypeSafe's SDK client (typesafe-sdk): system_one
-# takes the same arguments and returns the same response. `model` is a name below, and the
-# router sends the request through an SDK client configured as that entry says.
+#     router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), project="evals", run="2026-10")
+#     client = router.client("jev")           # a typesafe_sdk.TypeSafeClient
+#     with labels(item=17):
+#         response = client.system_one(state=..., questions={...})
 #
-# The name is also what answers are stored under in the cache: it stands for one
-# configuration (model id, provider pin and requirements), so a different model gets a
-# different name.
+# The client is the SDK's own; its requests go through the gateway, which answers from the
+# store what was asked before and records every request and response.
 #
 #
-# ---- The cache ----------------------------------------------------------------------------
+# ---- The store ----------------------------------------------------------------------------
 #
-# An answer is reused when the same model name, the same requirements and the same request
-# body (as the SDK sends it) come again. It is never asked again and never replaced. Errors
-# (HTTP errors, timeouts) are raised and not cached. Requests with assets (images) are sent but
-# not cached yet.
+# Every response is recorded as an observation: what was sent, where, the response as
+# received, the model and provider it reports, when, and the cost. Every request is recorded
+# too: project, run, labels, model name, which observation answered it, and whether it came
+# from the store. A request is answered from the store when an observation for the same
+# request (the body as sent, to the same endpoint) is there and the model's requirements
+# accept it. Errors (HTTP errors, timeouts) are raised and not recorded. Requests with assets
+# (images) are sent but not recorded yet.
 #
 #
 # ---- Requirements -------------------------------------------------------------------------
 #
 # [models.<name>.requirements]
 #
-# Reject responses from the model if these conditions are not met. Used to prevent different
-# models served by the same backend configuration from sharing a cache, for example minor
-# updates without a version jump.
+# Which answers this name accepts. Used to prevent different models served by the same
+# backend configuration from sharing answers, for example minor updates without a version
+# jump.
 #
-# A requirement that is not met stops the call with RequirementNotMetError: the question is
-# not sent, or the response is not stored. Answers already in the cache are served as they are.
-# Changing the requirements starts a new set of answers for the model.
+# Requirements are checked when stored answers are looked up and when a new response arrives.
+# A response that isn't accepted stays recorded, and the call raises RequirementNotMetError;
+# another name whose requirements accept it can use it without asking again.
 #
 #   systemone_response_model_id = "<id>"
 #       The response's `model` is this id. In the System One API, `model` names the model that
@@ -46,53 +47,52 @@
 #       response.
 #
 #   request_date_range = ["<start>", "<end>"]
-#       New questions only between these times: ISO strings or TOML datetimes, no offset means
-#       UTC. A stopgap for models whose responses say nothing about which model answered: it
-#       keeps one run's answers to a short window, in which the model is assumed not to change.
+#       Only answers asked between these times count, and requests outside them are not sent.
+#       ISO strings or TOML datetimes; no offset means UTC. A stopgap for models whose
+#       responses say nothing about which model answered: it keeps one run's answers to a short
+#       window, in which the model is assumed not to change.
 #
 #   "module:Class" = <value>
-#       Your own: a subclass of decision_gateway.requirements.RequestRequirement (checked before
-#       a question is sent) or ResponseRequirement (checked on the response before it is
-#       stored). It is built from the value: a table becomes keyword arguments, anything else
-#       one argument. Its check() returns None if met, or the reason it is not. For example:
+#       Your own subclass of decision_gateway.Requirement, built from the value: a table becomes
+#       keyword arguments, anything else one argument. accepts() returns None if an observation
+#       counts, or the reason it doesn't; allows_sending() can stop a request before it is sent.
 #
-#           from decision_gateway import RoutedResponse
-#           from decision_gateway.requirements import Asking, ResponseRequirement
+#           from decision_gateway import Observation, Requirement
 #
-#           class MaxProbability(ResponseRequirement):
+#           class MaxCost(Requirement):
 #               def __init__(self, at_most: float) -> None:
 #                   self.at_most = at_most
 #
-#               def check(self, asking: Asking, response: RoutedResponse) -> str | None:
-#                   top = max(p for c in response.choices.values() for p in c.probabilities.values())
-#                   return None if top <= self.at_most else f"{top} is above {self.at_most}"
+#               def accepts(self, observation: Observation) -> str | None:
+#                   cost = observation.cost or 0.0
+#                   return None if cost <= self.at_most else f"cost {cost} is above {self.at_most}"
 #
-#       and in models.toml:  "my_checks:MaxProbability" = { at_most = 0.99 }
+#       and in models.toml:  "my_checks:MaxCost" = { at_most = 0.001 }
 #
 #
 # ---- Fields -------------------------------------------------------------------------------
 #
-#   backend       "typesafe", "openrouter" or "uniform"; sets the defaults below
+#   backend        "typesafe", "openrouter" or "uniform"; sets the defaults below
 #                                                                        (default "typesafe")
-#   model         the model id sent in the request ("typesafe/jev-1.13")     (default: <name>)
-#   display_name  a readable name, for pages and reports                    (default: <name>)
-#   base_url      where the SDK sends requests; /v1/systemone is added
-#                     typesafe:   TypeSafe's API (the SDK's default)
-#                     openrouter: https://openrouter.ai/api
-#   key_env       the environment variable with the API key
-#                     typesafe:   TYPESAFE_API_KEY
-#                     openrouter: OPENROUTER_API_KEY
-#                 It is read only when a question is not in the cache, so a machine without it
-#                 still serves every cached answer.
-#   extra_body    fields merged into every request body, e.g. OpenRouter's provider routing:
-#                 { provider = { only = ["typesafe"], allow_fallbacks = false } } keeps every
-#                 answer with one provider. Part of the request, so part of the cache key.
-#                 Other options: https://openrouter.ai/docs/features/provider-routing
-#   compression   false: send requests uncompressed       (openrouter: false; else the SDK's)
-#   timeout       seconds per request                                  (default: the SDK's)
-#   max_retries   retries on rate limits, server errors and timeouts   (default: the SDK's)
-#   cache         false: always ask, never store                                (default true)
-#   requirements  see above                                                       (default none)
+#   model          the model id the client sends ("typesafe/jev-1.13")       (default: <name>)
+#   display_name   a readable name, for pages and reports                   (default: <name>)
+#   base_url       where the client sends requests; /v1/systemone is added
+#                      typesafe:   TypeSafe's API (the SDK's default)
+#                      openrouter: https://openrouter.ai/api
+#   key_env        the environment variable with the API key
+#                      typesafe:   TYPESAFE_API_KEY
+#                      openrouter: OPENROUTER_API_KEY
+#   extra_body     fields added to every request body where the call doesn't set them, e.g.
+#                  OpenRouter's provider routing:
+#                  { provider = { only = ["typesafe"], allow_fallbacks = false } } keeps every
+#                  answer with one provider. Part of the request, so part of what is looked up.
+#                  Other options: https://openrouter.ai/docs/features/provider-routing
+#   extra_headers  headers added to every request
+#   compression    false: send requests uncompressed       (openrouter: false; else the SDK's)
+#   timeout        seconds per request                                 (default: the SDK's)
+#   max_retries    retries on rate limits, server errors and timeouts  (default: the SDK's)
+#   cache          false: always ask; answers are still recorded                (default true)
+#   requirements   see above                                                     (default none)
 #
 #   backend = "uniform" is a local baseline that gives every option the same probability: no
 #   network, no key, no cost, answers valid System One responses.
@@ -100,7 +100,7 @@
 #
 # ---- Examples -----------------------------------------------------------------------------
 
-# The baseline. Useful for trying the router and for comparing against.
+# The baseline. Useful for trying the gateway and for comparing against.
 [models.uniform]
 backend = "uniform"
 
@@ -133,23 +133,29 @@ openrouter_response_provider = "TypeSafe"
 # requirements = { request_date_range = ["2026-10-16T09:00:00Z", "2026-10-17T09:00:00Z"] }
 
 # The same model, allowed to fall back to other providers: answers may come from any of them,
-# so they are not cached.
+# so stored answers are not reused (they are still recorded).
 # [models.decider-any-provider]
 # backend = "openrouter"
 # model = "example-org/decider"
 # cache = false
 
-# Your own System One server. The name says which weights it serves; a requirement of your own
-# checks what the server reports.
-# [models.decider-4b-3f2a9c1]
+# Your own System One server. It reports the exact version in the response's `model`, and the
+# requirement holds this name to one version.
+# [models.decider-4b]
 # base_url = "http://localhost:8000"
 # key_env = "DECIDER_API_KEY"
 # model = "decider-4b"
 # timeout = 120
 # max_retries = 5
-# requirements = { "my_checks:ServesWeights" = "example-org/decider-4b@3f2a9c1" }
+# requirements = { systemone_response_model_id = "decider-4b@3f2a9c1" }
 
-# The baseline, asked every time and never stored.
+# A requirement of your own.
+# [models.jev-cheap]
+# backend = "openrouter"
+# model = "typesafe/jev-1.13"
+# requirements = { "my_checks:MaxCost" = { at_most = 0.001 } }
+
+# The baseline, asked every time.
 # [models.uniform-uncached]
 # backend = "uniform"
 # cache = false

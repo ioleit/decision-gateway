@@ -6,9 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from decision_gateway import RoutedResponse, models
+from decision_gateway import Observation, Requirement, models
 from decision_gateway.models import MissingKeyError, Model
-from decision_gateway.requirements import Asking, ResponseRequirement
 
 EXAMPLE = Path(__file__).parents[2] / "models.example.toml"
 
@@ -52,19 +51,19 @@ def test_cache_off_per_model() -> None:
     assert models.from_config({"models": {"u": {"backend": "uniform", "cache": False}}})["u"].cache is False
 
 
-class ServesWeights(ResponseRequirement):
-    """Stands in for the template's "my_checks:ServesWeights"."""
+class MaxCost(Requirement):
+    """Stands in for the template's "my_checks:MaxCost"."""
 
-    def __init__(self, weights: str) -> None:
-        self.weights = weights
+    def __init__(self, at_most: float) -> None:
+        self.at_most = at_most
 
-    def check(self, asking: Asking, response: RoutedResponse) -> str | None:  # noqa: ARG002
+    def accepts(self, observation: Observation) -> str | None:  # noqa: ARG002
         return None
 
 
 def test_every_template_in_the_example_loads(monkeypatch: pytest.MonkeyPatch) -> None:
     """The commented-out templates in models.example.toml, uncommented, are valid models."""
-    monkeypatch.setitem(sys.modules, "my_checks", SimpleNamespace(ServesWeights=ServesWeights))
+    monkeypatch.setitem(sys.modules, "my_checks", SimpleNamespace(MaxCost=MaxCost))
     lines, in_template = [], False
     for line in EXAMPLE.read_text().splitlines():
         # a template: "# [models.<name>]", then "# <field> = <value>" lines
@@ -73,7 +72,7 @@ def test_every_template_in_the_example_loads(monkeypatch: pytest.MonkeyPatch) ->
         lines.append(line.removeprefix("# ") if in_template else line)
     ms = models.from_config(tomllib.loads("\n".join(lines)))
     assert set(ms) == {
-        "uniform", "jev", "jev-typesafe", "decider-2026-10-16", "decider-any-provider", "decider-4b-3f2a9c1",
+        "uniform", "jev", "jev-typesafe", "decider-2026-10-16", "decider-any-provider", "decider-4b", "jev-cheap",
         "uniform-uncached",
     }  # fmt: skip
     jev = ms["jev"]
@@ -85,7 +84,7 @@ def test_every_template_in_the_example_loads(monkeypatch: pytest.MonkeyPatch) ->
     assert jev.extra_body == {"provider": {"only": ["typesafe"], "allow_fallbacks": False}}
     assert [type(r).__name__ for r in jev.requirements] == ["SystemOneResponseModelId", "OpenRouterResponseProvider"]
     assert [type(r).__name__ for r in ms["decider-2026-10-16"].requirements] == ["RequestDateRange"]
-    assert [type(r).__name__ for r in ms["decider-4b-3f2a9c1"].requirements] == ["ServesWeights"]
-    assert ms["decider-4b-3f2a9c1"].base_url == "http://localhost:8000"
+    assert [type(r).__name__ for r in ms["jev-cheap"].requirements] == ["MaxCost"]
+    assert ms["decider-4b"].base_url == "http://localhost:8000"
     assert not ms["decider-any-provider"].cache
     assert not ms["uniform-uncached"].cache

@@ -1,7 +1,12 @@
-"""Requirements: reject responses from a model if these conditions are not met.
+"""Requirements: which answers a model name accepts.
 
-Used to prevent different models served by the same backend configuration from sharing a
-cache, for example minor updates without a version jump.
+Used to prevent different models served by the same backend configuration from sharing
+answers, for example minor updates without a version jump.
+
+Every response is recorded as an observation (store.py). A model's requirements decide which
+observations count as that model's answers: when a request is looked up, and when a new
+response arrives. A response that is not accepted stays recorded, and the call raises
+RequirementNotMetError. A requirement can also stop a request before it is sent.
 
 In models.toml, a model's requirements are a table of name = value:
 
@@ -10,16 +15,8 @@ In models.toml, a model's requirements are a table of name = value:
     openrouter_response_provider = "TypeSafe"
     "my_checks:SameQuantization" = { quantization = "bf16" }
 
-A name is one of the built-ins below, or "module:Class" for your own: a subclass of
-RequestRequirement (checked before a question is sent) or ResponseRequirement (checked on the
-response before it is stored). It is built from the value: a table
-becomes keyword arguments, anything else one argument. check() returns None if the requirement
-is met, or the reason it is not.
-
-A requirement that is not met stops the call: nothing is sent, or nothing is stored, and
-RequirementNotMetError says why. Answers already in the cache are served as they are.
-
-The requirements are part of the cache key: changing them starts a new set of answers.
+A name is one of the built-ins below, or "module:Class" for your own subclass of Requirement,
+built from the value: a table becomes keyword arguments, anything else one argument.
 """
 
 from __future__ import annotations
@@ -33,43 +30,33 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from .systemone import JSONObject, RoutedResponse
+    from .store import Observation
 
 
 class RequirementNotMetError(Exception):
-    """A requirement of a model was not met; the response, if any, was not stored."""
+    """A request was not sent, or its response was not accepted, because of a requirement."""
 
 
 @dataclass(frozen=True)
 class Asking:
-    """A question about to be asked, as requirements see it."""
+    """A request about to be sent, as requirements see it."""
 
     model: str  # the name in models.toml
-    wire: JSONObject  # the request as it goes over the network
+    body: dict[str, Any]  # the System One request body as it will be sent
     now: datetime  # UTC
 
 
-class RequestRequirement(ABC):
-    """Checked before a question is sent."""
-
+class Requirement(ABC):
     @abstractmethod
-    def check(self, asking: Asking) -> str | None:
-        """None if the question may be sent, else why not."""
+    def accepts(self, observation: Observation) -> str | None:
+        """None if the observation counts as an answer of this model, else why not."""
+
+    def allows_sending(self, asking: Asking) -> str | None:  # noqa: ARG002 (most requirements need not look)
+        """None if the request may be sent, else why not. By default every request may."""
+        return None
 
 
-class ResponseRequirement(ABC):
-    """Checked on a response before it is stored."""
-
-    @abstractmethod
-    def check(self, asking: Asking, response: RoutedResponse) -> str | None:
-        """None if the response may be stored, else why not. Fields a server adds beyond the
-        System One API (OpenRouter's `provider`) are in response.model_extra."""
-
-
-Requirement = RequestRequirement | ResponseRequirement
-
-
-class SystemOneResponseModelId(ResponseRequirement):
+class SystemOneResponseModelId(Requirement):
     """The response's `model` is this id.
 
     In the System One API, a response's `model` names the model that served the request.
@@ -80,25 +67,25 @@ class SystemOneResponseModelId(ResponseRequirement):
     def __init__(self, model_id: str) -> None:
         self.model_id = model_id
 
-    def check(self, asking: Asking, response: RoutedResponse) -> str | None:  # noqa: ARG002 (only the response matters)
-        served = response.model
+    def accepts(self, observation: Observation) -> str | None:
+        served = observation.served_model
         return None if served == self.model_id else f"served by {served!r}, not {self.model_id!r}"
 
 
-class OpenRouterResponseProvider(ResponseRequirement):
+class OpenRouterResponseProvider(Requirement):
     """The response's `provider` is this name ("TypeSafe"): OpenRouter adds it to every response."""
 
     def __init__(self, provider: str) -> None:
         self.provider = provider
 
-    def check(self, asking: Asking, response: RoutedResponse) -> str | None:  # noqa: ARG002 (only the response matters)
-        provider = (response.model_extra or {}).get("provider")
+    def accepts(self, observation: Observation) -> str | None:
+        provider = observation.provider
         return None if provider == self.provider else f"served by provider {provider!r}, not {self.provider!r}"
 
 
-class RequestDateRange(RequestRequirement):
-    """New questions only between two times: [start, end], ISO strings or TOML datetimes (no
-    offset means UTC).
+class RequestDateRange(Requirement):
+    """Only answers asked between two times count: [start, end], ISO strings or TOML datetimes
+    (no offset means UTC). Requests outside the range are not sent.
 
     A stopgap for models whose responses say nothing about which model answered: it keeps one
     run's answers to a short window, in which the model is assumed not to change.
@@ -107,10 +94,18 @@ class RequestDateRange(RequestRequirement):
     def __init__(self, range_: Sequence[datetime | str]) -> None:
         self.start, self.end = (_utc(t) for t in range_)
 
-    def check(self, asking: Asking) -> str | None:
-        if self.start <= asking.now <= self.end:
-            return None
-        return f"new questions may be sent only between {_iso(self.start)} and {_iso(self.end)}"
+    def accepts(self, observation: Observation) -> str | None:
+        return (
+            None
+            if self.start <= observation.asked_at <= self.end
+            else f"asked at {_iso(observation.asked_at)}, {self._range()}"
+        )
+
+    def allows_sending(self, asking: Asking) -> str | None:
+        return None if self.start <= asking.now <= self.end else f"now is {_iso(asking.now)}, {self._range()}"
+
+    def _range(self) -> str:
+        return f"outside {_iso(self.start)} to {_iso(self.end)}"
 
 
 BUILTIN: dict[str, Callable[..., Requirement]] = {
@@ -120,7 +115,7 @@ BUILTIN: dict[str, Callable[..., Requirement]] = {
 }
 
 
-def from_config(table: JSONObject) -> list[Requirement]:
+def from_config(table: dict[str, Any]) -> list[Requirement]:
     """The requirements of a models.toml `requirements` table."""
     out: list[Requirement] = []
     for name, value in table.items():
@@ -129,21 +124,18 @@ def from_config(table: JSONObject) -> list[Requirement]:
     return out
 
 
-def spec(table: JSONObject) -> JSONObject:
-    """The table as JSON (datetimes as ISO text), for the cache key and the stored record."""
-    return {k: _jsonable(v) for k, v in table.items()}
-
-
-def check_request(model: str, requirements: Sequence[Requirement], asking: Asking) -> None:
+def first_rejection(requirements: Sequence[Requirement], observation: Observation) -> str | None:
+    """None if every requirement accepts the observation, else the first reason it is not."""
     for r in requirements:
-        if isinstance(r, RequestRequirement) and (reason := r.check(asking)) is not None:
+        if (reason := r.accepts(observation)) is not None:
+            return f"{reason} ({type(r).__name__})"
+    return None
+
+
+def check_sending(model: str, requirements: Sequence[Requirement], asking: Asking) -> None:
+    for r in requirements:
+        if (reason := r.allows_sending(asking)) is not None:
             raise RequirementNotMetError(f"{model}: not sent, {reason} ({type(r).__name__})")
-
-
-def check_response(model: str, requirements: Sequence[Requirement], asking: Asking, response: RoutedResponse) -> None:
-    for r in requirements:
-        if isinstance(r, ResponseRequirement) and (reason := r.check(asking, response)) is not None:
-            raise RequirementNotMetError(f"{model}: response not stored, {reason} ({type(r).__name__})")
 
 
 def _import(target: str) -> Callable[..., Requirement]:
@@ -151,20 +143,10 @@ def _import(target: str) -> Callable[..., Requirement]:
     if not name:
         raise ValueError(f"unknown requirement {target!r}: not a built-in ({', '.join(BUILTIN)}) nor 'module:Class'")
     cls = getattr(importlib.import_module(module), name)
-    if not (isinstance(cls, type) and issubclass(cls, (RequestRequirement, ResponseRequirement))):
-        raise TypeError(f"{target} is not a RequestRequirement or ResponseRequirement")
+    if not (isinstance(cls, type) and issubclass(cls, Requirement)):
+        raise TypeError(f"{target} is not a Requirement")
     built: Callable[..., Requirement] = cls
     return built
-
-
-def _jsonable(value: Any) -> Any:  # noqa: ANN401 (any TOML value)
-    if isinstance(value, datetime):
-        return _iso(_utc(value))
-    if isinstance(value, dict):
-        return {k: _jsonable(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_jsonable(v) for v in value]
-    return value
 
 
 def _utc(value: datetime | str) -> datetime:
@@ -174,4 +156,4 @@ def _utc(value: datetime | str) -> datetime:
 
 
 def _iso(when: datetime) -> str:
-    return when.isoformat().replace("+00:00", "Z")
+    return when.astimezone(UTC).isoformat().replace("+00:00", "Z")
