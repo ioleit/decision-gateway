@@ -20,4 +20,5 @@ def test_wheel_contents(tmp_path: Path) -> None:
     assert "decision_gateway/transports/gateway_transport.py" in names
     assert "decision_gateway/store/sqlite.py" in names
     assert "decision_gateway/testing.py" in names
+    assert "decision_gateway/py.typed" in names
     assert not [n for n in names if n.endswith(("_test.py", "conftest.py"))]
