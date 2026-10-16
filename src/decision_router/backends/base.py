@@ -6,9 +6,8 @@ OpenAPI spec at https://api.typesafe.ai/openapi.json. In short:
     request   {"model": ..., "state": <any JSON>, "questions": {name: {"type": ..., ...}}}
     response  {"model": ..., "answers": {name: {"type": ..., ...}}, "usage": {...}}
 
-An answer the model could not give ({"type": ..., "failed": reason}: a refusal, an unreadable
-reply) is a result and is cached like any other. A transport error (timeout, HTTP 5xx) raises
-and is not cached.
+A backend returns the response as received (JSON); the router validates it against the API.
+Transport errors (timeouts, HTTP errors) raise and are not cached.
 """
 
 from __future__ import annotations

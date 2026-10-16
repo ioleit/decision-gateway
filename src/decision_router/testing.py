@@ -5,7 +5,7 @@
 
     fake = Fake("fake")
     router = Router({"fake": fake}, Cache(tmp_path / "cache.sqlite"))
-    router.ask("fake", choice("A", "B"))
+    router.ask("fake", **choice("A", "B"))
     assert fake.calls == 1
 
 Fake answers like the uniform backend, so tests need no network.
@@ -35,7 +35,7 @@ class Fake(Backend):
         self.calls = 0
         self.delay = delay
         self.fail: Exception | None = None  # raised instead of answering
-        self.bad = False  # answer no questions
+        self.bad = False  # answer another question than the one asked
         self._lock = threading.Lock()
 
     def call(self, wire: JSONObject, request: JSONObject) -> Reply:
@@ -46,6 +46,6 @@ class Fake(Backend):
         if self.fail:
             raise self.fail
         if self.bad:
-            return Reply({"model": self.name, "answers": {}})
+            return Reply({"model": self.name, "answers": {"other": {"type": "noul", "noul": 0.5}}, "usage": {}})
         reply = Uniform(self.name).call(wire, request)
         return Reply(reply.response, raw={"wrapped": reply.response}, cost=0.001, provenance={"generation": "gen-1"})

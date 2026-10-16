@@ -1,17 +1,20 @@
 # decision-router
 
-Ask decision models (Jev-style APIs that return a choice and its probabilities in one pass)
-through one router, with a cache that never asks the same question twice.
+A router for System One decision models such as Jev, with a cache that never asks the same
+question twice. It speaks TypeSafe's [System One API](https://docs.typesafe.ai/api) and uses
+the types of TypeSafe's SDK ([`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/)) for
+questions and answers.
 
 Status: early. Backends: `uniform` (a no-network baseline that gives every option equal
-probability), `openrouter` and `http` (any endpoint that takes a Jev request). The HTTP
+probability), `openrouter` and `http` (any endpoint that takes a System One request). The HTTP
 backends are tested against a local server; `examples/smoke` walks through asking, querying
 and preheating, with uniform or live with Jev through OpenRouter.
 
 ## Parts
 
-- **Router**: `Router.ask(model, request, labels=...)` answers from the cache, or asks the
-  model's backend and caches the answer.
+- **Router**: `Router.ask(model, state=..., questions=..., labels=...)` answers from the
+  cache, or asks the model's backend and caches the answer. Every response is checked
+  against the System One API before it is cached.
 - **Cache**: one SQLite file (WAL), shared by every process on a machine. An answer is keyed
   by the model's name, its requirements and the request exactly as sent, and is final.
 - **Labels**: what a question is about, in the caller's terms: any JSON object, several per
@@ -34,16 +37,21 @@ pip install -e '.[dev]'     # + pytest, build, ruff, mypy (and DuckDB, huggingfa
 ## Use
 
 ```python
+from typesafe_sdk import Noul
+
 from decision_router import Cache, Router, models
 
 router = Router(models.load("models.toml"), Cache())
-request = {
-    "state": {"options": ["A", "B", "C"]},
-    "questions": {"pick": {"type": "choice", "criteria": {"A": "...", "B": "...", "C": "..."}}},
-}
-response = router.ask("uniform", request, labels={"study": "demo", "item": 7})
-router.cached("uniform", request)  # the same response, without asking
+state = "I was charged twice for my subscription."
+questions = {"refund": Noul(instructions="Is the customer asking for money back?")}
+
+response = router.ask("jev", state=state, questions=questions, labels={"study": "demo"})
+response.nouls["refund"].noul  # a typesafe_sdk SystemOneResponse
+router.cached("jev", state=state, questions=questions)  # the same, without asking
 ```
+
+Questions are the SDK's question objects (`Noul`, `Choice`, `Score`, `Box`) or the matching
+dictionaries. Images in requests are not supported yet.
 
 `models.toml` says which models there are, how each is reached, and when its answers may be
 cached. [`models.example.toml`](models.example.toml) describes every field, with examples;

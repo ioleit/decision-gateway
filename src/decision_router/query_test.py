@@ -10,9 +10,9 @@ from decision_router.testing import choice
 def filled(router: Router, cache: Cache) -> Cache:
     for n in (2, 3, 4):
         opts = "ABCD"[:n]
-        router.ask("uniform", choice(*opts), labels={"task": "demo", "n": n})
-        router.ask("fake", choice(*opts), labels={"task": "demo", "n": n})
-    router.ask("uniform", choice("A", "B"), labels={"study": "other"})
+        router.ask("uniform", **choice(*opts), labels={"task": "demo", "n": n})
+        router.ask("fake", **choice(*opts), labels={"task": "demo", "n": n})
+    router.ask("uniform", **choice("A", "B"), labels={"study": "other"})
     return cache
 
 
@@ -36,7 +36,7 @@ def test_json_columns_are_queryable(filled: Cache) -> None:
 
 def test_reads_while_a_writer_works(filled: Cache, router: Router) -> None:
     con = query.connect(filled.path)
-    router.ask("uniform", choice("X", "Y"))
+    router.ask("uniform", **choice("X", "Y"))
     assert con.sql("SELECT count(*) FROM answers").fetchall() == [(7,)]
 
 

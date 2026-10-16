@@ -32,4 +32,4 @@ def test_jev_golden_serves_without_a_key(tmp_path: Path, monkeypatch: pytest.Mon
         r = router(cache)
         assert preheat(HERE / "golden" / "jev", cache) == (5, 5)
         for q in GOLDEN:
-            assert r.ask("jev", request(q))["model"] == "typesafe/jev-1.13-20260917"
+            assert r.ask("jev", **request(q)).model == "typesafe/jev-1.13-20260917"

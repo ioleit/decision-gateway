@@ -96,9 +96,7 @@
 # The key is read only when a question is not in the cache, so a machine without it still
 # serves every cached answer.
 #
-# A refusal (the provider declines to answer) is cached as a failed answer,
-# {"type": ..., "failed": "refusal: ..."}. It names no model, so with
-# systemone_response_model_id set it is not stored.
+# A refusal (the provider declines to answer) raises RefusalError: not retried, not cached.
 #
 #
 # ---- backend = "http" ---------------------------------------------------------------------

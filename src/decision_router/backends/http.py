@@ -23,6 +23,10 @@ class TransientError(Exception):
     """A failure worth retrying: HTTP 429 or 5xx, a timeout, a dropped connection."""
 
 
+class RefusalError(Exception):
+    """The provider declined to answer; not retried, not cached."""
+
+
 class MissingKeyError(Exception):
     """The API key (or a variable in the url) is not in the environment."""
 
@@ -65,16 +69,6 @@ class HTTP(Backend):
 
     def call(self, wire: JSONObject, request: JSONObject) -> Reply:
         raw = self._post_with_retries(*self._url_and_headers(), wire)
-        if "refusal" in raw:  # the model's answer: stored as failed answers
-            why = raw["refusal"].get("message") if isinstance(raw["refusal"], dict) else raw["refusal"]
-            response = {
-                "model": wire.get("model"),
-                "answers": {
-                    n: {"type": q.get("type", "choice"), "failed": f"refusal: {why}"}
-                    for n, q in wire["questions"].items()
-                },
-            }
-            return Reply(response, raw=raw)
         wrapper = self.entry.get("unwrap")
         response = raw[wrapper] if wrapper else raw
         usage = response.get("usage") or {}
@@ -100,13 +94,11 @@ class HTTP(Backend):
         except urllib.error.HTTPError as e:
             with e:  # an HTTPError holds the open response
                 text = e.read().decode(errors="replace")
-            # A refusal is an answer. OpenRouter reports one as an HTTP error whose body says
-            # so, e.g. 502 {"error": {"message": "... refused to answer question \"q\""}}.
+            # OpenRouter reports a refusal as an HTTP error whose body says so, e.g.
+            # 502 {"error": {"message": "... refused to answer question \"q\""}}. The System One
+            # API has no answer for it, so it is an error: not retried, not cached.
             if "refused to answer" in text:
-                try:
-                    return {"refusal": json.loads(text).get("error", text), "http_status": e.code}
-                except ValueError:
-                    return {"refusal": text, "http_status": e.code}
+                raise RefusalError(f"{self.name}: refused to answer: {text[:300]}") from None
             transient = e.code == HTTPStatus.TOO_MANY_REQUESTS or e.code >= HTTPStatus.INTERNAL_SERVER_ERROR
             error: type[Exception] = TransientError if transient else RuntimeError
             raise error(f"{self.name}: HTTP {e.code}: {text[:300]}") from None

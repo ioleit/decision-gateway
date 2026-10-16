@@ -1,9 +1,18 @@
 """Ask a decision model, from the cache if the question was asked before.
 
-    router = Router(models.load("models.toml"), Cache())
-    response = router.ask("uniform", request, labels={"study": "demo", "item": 7})
+    from typesafe_sdk import Noul
 
-A question already answered (same model, requirements and wire) is never asked again. Within one
+    router = Router(models.load("models.toml"), Cache())
+    response = router.ask(
+        "jev",
+        state="I was charged twice for my subscription.",
+        questions={"refund": Noul(instructions="Is the customer asking for money back?")},
+        labels={"study": "demo", "item": 7},
+    )
+    response.nouls["refund"].noul
+
+Questions and responses are TypeSafe's System One types (see systemone.py). A question
+already answered (same model, requirements and request) is never asked again. Within one
 process, a question being asked is waited for, not asked a second time; across processes, the
 cache keeps whichever answer arrives first.
 """
@@ -17,8 +26,13 @@ from typing import TYPE_CHECKING
 
 from .cache import Cache, Record, key
 from .requirements import Asking, check_request, check_response
+from .systemone import parse_response, wire_questions
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from typesafe_sdk import JSONValue, Question, SystemOneResponse
+
     from .backends import Backend, JSONObject, Reply
 
 
@@ -35,32 +49,22 @@ class Router:
         except KeyError:
             raise KeyError(f"unknown model {name!r}; known: {', '.join(self.models)}") from None
 
-    def _cached(self, name: str, request: JSONObject) -> tuple[Cache, str] | None:
-        """(cache, key) if answers of model name to request are cached, else None."""
-        backend = self.model(name)
-        if self.cache is None or not backend.cache:
-            return None
-        return self.cache, key(name, backend.requirements_spec, backend.wire(request))
-
-    def key(self, name: str, request: JSONObject) -> str | None:
-        """The cache key for request to model name, or None if its answers are not cached.
-        Makes no call."""
-        found = self._cached(name, _with_model(request, name))
-        return None if found is None else found[1]
-
-    def cached(self, name: str, request: JSONObject) -> JSONObject | None:
-        """The cached response, without asking; None if there is none."""
-        found = self._cached(name, _with_model(request, name))
-        return None if found is None else found[0].get(found[1])
-
-    def ask(self, name: str, request: JSONObject, labels: JSONObject | None = None) -> JSONObject:
-        """The response to request from model name: cached, or asked and then cached with labels."""
-        backend = self.model(name)
-        request = _with_model(request, name)
+    def ask(
+        self,
+        model: str,
+        *,
+        state: JSONValue,
+        questions: Mapping[str, Question],
+        labels: JSONObject | None = None,
+    ) -> SystemOneResponse:
+        """The answers of model to questions about state: cached, or asked and then cached with
+        labels (what the question is about, in your terms; not part of the cache key)."""
+        backend = self.model(model)
+        request = _request(model, state, questions)
         wire = backend.wire(request)
-        found = self._cached(name, request)
+        found = self._cached(model, request)
         if found is None:
-            return self._call(name, backend, wire, request).response
+            return parse_response(self._call(model, backend, wire, request).response, request["questions"])
         cache, k = found
         while True:
             with self._lock:
@@ -74,14 +78,14 @@ class Router:
             wait.wait()
         if hit is not None:
             cache.label(k, labels)
-            return hit
+            return parse_response(hit, request["questions"])
         try:
-            reply = self._call(name, backend, wire, request)
+            reply = self._call(model, backend, wire, request)
             response = reply.response
             cache.put(
                 Record(
                     key=k,
-                    model=name,
+                    model=model,
                     requirements=backend.requirements_spec,
                     request=request,
                     response=response,
@@ -93,28 +97,42 @@ class Router:
                 )
             )
             cache.label(k, labels)
-            return response
+            return parse_response(response, request["questions"])
         finally:
             with self._lock:
                 self._inflight.pop(k).set()
 
-    def _call(self, name: str, backend: Backend, wire: JSONObject, request: JSONObject) -> Reply:
-        """Ask the backend, with the model's requirements checked before and after."""
-        asking = Asking(model=name, wire=wire, now=datetime.now(UTC))
-        check_request(name, backend.requirements, asking)
+    def cached(self, model: str, *, state: JSONValue, questions: Mapping[str, Question]) -> SystemOneResponse | None:
+        """The cached answers, without asking; None if there are none."""
+        request = _request(model, state, questions)
+        found = self._cached(model, request)
+        hit = None if found is None else found[0].get(found[1])
+        return None if hit is None else parse_response(hit, request["questions"])
+
+    def key(self, model: str, *, state: JSONValue, questions: Mapping[str, Question]) -> str | None:
+        """The cache key of these questions to model, or None if its answers are not cached.
+        Makes no call."""
+        found = self._cached(model, _request(model, state, questions))
+        return None if found is None else found[1]
+
+    def _cached(self, model: str, request: JSONObject) -> tuple[Cache, str] | None:
+        """(cache, key) if answers of model to request are cached, else None."""
+        backend = self.model(model)
+        if self.cache is None or not backend.cache:
+            return None
+        return self.cache, key(model, backend.requirements_spec, backend.wire(request))
+
+    def _call(self, model: str, backend: Backend, wire: JSONObject, request: JSONObject) -> Reply:
+        """Ask the backend: the model's requirements checked before and after, the response
+        checked against the System One API. Nothing that fails a check is returned."""
+        asking = Asking(model=model, wire=wire, now=datetime.now(UTC))
+        check_request(model, backend.requirements, asking)
         reply = backend.call(wire, request)
-        _checked(reply.response, request)
-        check_response(name, backend.requirements, asking, reply.response)
+        parse_response(reply.response, request["questions"])
+        check_response(model, backend.requirements, asking, reply.response)
         return reply
 
 
-def _with_model(request: JSONObject, name: str) -> JSONObject:
-    return request if request.get("model") == name else {**request, "model": name}
-
-
-def _checked(response: JSONObject, request: JSONObject) -> JSONObject:
-    """A response must answer exactly the questions asked; anything else is an error, not an answer."""
-    answers = response.get("answers")
-    if not isinstance(answers, dict) or set(answers) != set(request["questions"]):
-        raise ValueError(f"response does not answer the questions asked: {str(response)[:300]}")
-    return response
+def _request(model: str, state: JSONValue, questions: Mapping[str, Question]) -> JSONObject:
+    """The System One request body, before a backend's changes (its model id, provider, ...)."""
+    return {"model": model, "state": state, "questions": wire_questions(questions)}

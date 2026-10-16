@@ -10,7 +10,7 @@ import pytest
 
 from decision_router import Cache, Router
 from decision_router.backends import JSONObject, OpenRouter
-from decision_router.backends.http import HTTP, MissingKeyError, TransientError
+from decision_router.backends.http import HTTP, MissingKeyError, RefusalError, TransientError
 from decision_router.requirements import RequirementNotMetError
 from decision_router.testing import choice
 
@@ -85,15 +85,15 @@ def jev(server: Server, monkeypatch: pytest.MonkeyPatch) -> OpenRouter:
 
 def test_wire_and_provenance(server: Server, jev: OpenRouter, cache: Cache) -> None:
     router = Router({"jev": jev}, cache)
-    r = router.ask("jev", choice("A", "B"))
+    r = router.ask("jev", **choice("A", "B"))
     sent = server.requests[0]
     assert sent["auth"] == "Bearer test-key"
     assert sent["body"]["model"] == "typesafe/jev-1.13"
     assert sent["body"]["provider"] == {"only": ["typesafe"], "allow_fallbacks": False}
-    assert r["model"] == SERVED
+    assert r.model == SERVED
     row = cache.con.execute("SELECT wire IS NOT NULL, cost, provenance, raw FROM answers").fetchone()
     assert row == (1, 3.1752e-05, '{"generation":"gen-dec-1","provider":"TypeSafe"}', None)
-    router.ask("jev", choice("A", "B"))
+    router.ask("jev", **choice("A", "B"))
     assert len(server.requests) == 1
 
 
@@ -111,27 +111,15 @@ def test_wire(jev: OpenRouter) -> None:
 def test_an_answer_from_another_model_is_not_stored(server: Server, jev: OpenRouter, cache: Cache) -> None:
     server.replies.append((200, lambda body: answer(body, model="typesafe/jev-1.14-20261101")))
     with pytest.raises(RequirementNotMetError, match=re.escape("served by 'typesafe/jev-1.14-20261101'")):
-        Router({"jev": jev}, cache).ask("jev", choice("A", "B"))
+        Router({"jev": jev}, cache).ask("jev", **choice("A", "B"))
     assert cache.counts() == (0, 0)
 
 
-REFUSAL = (502, {"error": {"message": 'OpenAI refused to answer question "pick"'}})
-
-
-def test_refusal_is_a_cached_failed_answer(server: Server, cache: Cache, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
-    plain = OpenRouter("plain", {"url": server.url, "model": "typesafe/jev-1.13"})
-    server.replies.append(REFUSAL)
-    r = Router({"plain": plain}, cache).ask("plain", choice("A", "B"))
-    assert r["answers"]["pick"]["failed"].startswith("refusal: OpenAI refused")
-    assert cache.counts()[0] == 1
-
-
-def test_a_refusal_does_not_meet_a_model_id_requirement(server: Server, jev: OpenRouter, cache: Cache) -> None:
-    # a refusal names no model that answered, so it cannot be stored under a model id requirement
-    server.replies.append(REFUSAL)
-    with pytest.raises(RequirementNotMetError, match=re.escape("served by 'typesafe/jev-1.13'")):
-        Router({"jev": jev}, cache).ask("jev", choice("A", "B"))
+def test_a_refusal_is_an_error_not_retried_not_cached(server: Server, jev: OpenRouter, cache: Cache) -> None:
+    server.replies.append((502, {"error": {"message": 'OpenAI refused to answer question "pick"'}}))
+    with pytest.raises(RefusalError, match="refused to answer"):
+        Router({"jev": jev}, cache).ask("jev", **choice("A", "B"))
+    assert len(server.requests) == 1
     assert cache.counts() == (0, 0)
 
 
@@ -140,18 +128,18 @@ def test_transient_errors_are_retried(
 ) -> None:
     monkeypatch.setattr("decision_router.backends.http.time.sleep", lambda _seconds: None)
     server.replies.append((503, {"error": "busy"}))
-    Router({"jev": jev}, cache).ask("jev", choice("A", "B"))
+    Router({"jev": jev}, cache).ask("jev", **choice("A", "B"))
     assert len(server.requests) == 2
     server.replies += [(429, {}), (500, {})]
     with pytest.raises(TransientError):
-        Router({"jev": jev}, cache).ask("jev", choice("A", "B", "C"))
+        Router({"jev": jev}, cache).ask("jev", **choice("A", "B", "C"))
     assert cache.counts()[0] == 1
 
 
 def test_client_errors_are_not_retried(server: Server, jev: OpenRouter, cache: Cache) -> None:
     server.replies.append((400, {"error": "bad request"}))
     with pytest.raises(RuntimeError, match="HTTP 400"):
-        Router({"jev": jev}, cache).ask("jev", choice("A", "B"))
+        Router({"jev": jev}, cache).ask("jev", **choice("A", "B"))
     assert len(server.requests) == 1
 
 
@@ -159,17 +147,17 @@ def test_without_a_key_cached_answers_are_still_served(
     server: Server, jev: OpenRouter, cache: Cache, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     router = Router({"jev": jev}, cache)
-    router.ask("jev", choice("A", "B"))
+    router.ask("jev", **choice("A", "B"))
     monkeypatch.delenv("OPENROUTER_API_KEY")
-    assert router.ask("jev", choice("A", "B"))["model"] == SERVED
+    assert router.ask("jev", **choice("A", "B")).model == SERVED
     with pytest.raises(MissingKeyError, match="OPENROUTER_API_KEY"):
-        router.ask("jev", choice("A", "B", "C"))
+        router.ask("jev", **choice("A", "B", "C"))
     assert len(server.requests) == 1
 
 
 def test_plain_http_without_model_or_key(server: Server, cache: Cache) -> None:
     local = HTTP("local", {"url": server.url, "model": ""})
-    Router({"local": local}, cache).ask("local", choice("A", "B"))
+    Router({"local": local}, cache).ask("local", **choice("A", "B"))
     assert "model" not in server.requests[0]["body"]
     assert server.requests[0]["auth"] is None
 
@@ -177,6 +165,6 @@ def test_plain_http_without_model_or_key(server: Server, cache: Cache) -> None:
 def test_unwrap(server: Server, cache: Cache) -> None:
     server.replies.append((200, lambda body: {"result": answer(body), "success": True}))
     cf = HTTP("cf", {"url": server.url, "unwrap": "result"})
-    Router({"cf": cf}, cache).ask("cf", choice("A", "B"))
+    Router({"cf": cf}, cache).ask("cf", **choice("A", "B"))
     raw = cache.con.execute("SELECT raw FROM answers").fetchone()[0]
     assert json.loads(raw)["success"] is True

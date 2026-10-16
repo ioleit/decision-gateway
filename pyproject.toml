@@ -9,7 +9,7 @@ description = "Ask decision models through one router, with a cache that never a
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["typesafe-sdk>=0.7.5,<0.8"]
 
 [project.optional-dependencies]
 query = ["duckdb>=1.1"]
@@ -60,7 +60,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Tests: plain asserts, literal expected values, fixtures used only for their side effects.
-"**/*_test.py" = ["S101", "PLR2004", "SLF001", "ARG001", "S603"]
+"**/*_test.py" = ["S101", "PLR2004", "SLF001", "ARG001", "S603", "S608"]
 "tests/**" = ["S101", "PLR2004", "S603", "INP001"]
 # The examples are scripts, not a package: imported after putting their folder on sys.path.
 "tests/examples_test.py" = ["S101", "PLR2004", "S603", "INP001", "PLC0415"]
