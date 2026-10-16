@@ -1,12 +1,12 @@
 import pytest
 from typesafe_sdk import Box, Choice, Noul, Score
 
-from decision_gateway import ModelConfig, Router, SQLiteStore
-from decision_gateway.uniform import respond
+from decision_gateway import Gateway, ModelConfig, SQLiteStore
+from decision_gateway.transports.uniform_transport import respond
 
 
 def test_every_question_type_gets_a_valid_answer_through_the_sdk(store: SQLiteStore) -> None:
-    client = Router({"u": ModelConfig(name="u", backend="uniform")}, store).client("u")
+    client = Gateway({"u": ModelConfig(name="u", backend="uniform")}, store).client("u")
     r = client.system_one(
         state="s",
         questions={

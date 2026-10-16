@@ -21,7 +21,7 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/decision_gateway"]
-# Tests live next to the modules (router.py, router_test.py) and stay out of the wheel;
+# Tests live next to the modules (gateway.py, gateway_test.py) and stay out of the wheel;
 # tests/package_test.py checks it.
 exclude = ["*_test.py"]
 

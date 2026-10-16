@@ -1,4 +1,4 @@
-"""The uniform baseline: a local System One server that gives every option equal probability.
+"""UniformTransport: a local System One server that gives every option equal probability.
 
 It is an HTTP transport for the SDK, so a uniform model goes through exactly the same client,
 cache and checks as a real one, without a network or a key:
@@ -50,6 +50,11 @@ def respond(body: dict[str, Any], model: str = "uniform") -> dict[str, Any]:
     return {"model": model, "answers": answers, "usage": {"input_tokens": 0, "output_tokens": 0}}
 
 
-def transport() -> httpx2.MockTransport:
-    """An httpx2 transport that answers every System One request uniformly."""
-    return httpx2.MockTransport(lambda request: httpx2.Response(200, json=respond(json.loads(request.content))))
+class UniformTransport(httpx2.BaseTransport, httpx2.AsyncBaseTransport):
+    """An httpx transport that answers every System One request uniformly, sync or async."""
+
+    def handle_request(self, request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json=respond(json.loads(request.content)))
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        return self.handle_request(request)

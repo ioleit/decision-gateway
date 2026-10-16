@@ -11,7 +11,7 @@ JSON body), the gateway
    one the model's requirements accept, without a call (a hit);
 2. otherwise checks that the requirements allow sending, sends the request, and records the
    response as an observation; if the requirements don't accept it, the call raises
-   RequirementNotMetError, and the observation stays recorded;
+   ConstraintViolatedError, and the observation stays recorded;
 3. records every request, hit or not, with its labels (labels.py): the transport's own,
    those set by labels() around the call, and those sent with label_headers().
 
@@ -31,16 +31,16 @@ from typing import TYPE_CHECKING, Any
 import httpx2
 from pydantic import ValidationError
 
-from .key import key
-from .labels import HEADER as LABELS_HEADER
-from .labels import current as current_labels
-from .requirements import Asking, RequirementNotMetError, check_sending, first_rejection
-from .store import Observation, RequestEvent
-from .systemone import RoutedResponse
+from decision_gateway.constraints import Asking, ConstraintViolatedError, check_sending, first_rejection
+from decision_gateway.labels import HEADER as LABELS_HEADER
+from decision_gateway.labels import current as current_labels
+from decision_gateway.store import Observation, RequestEvent
+from decision_gateway.store.key import key
+from decision_gateway.systemone import RoutedResponse
 
 if TYPE_CHECKING:
-    from .config import ModelConfig
-    from .store import Store
+    from decision_gateway.config import ModelConfig
+    from decision_gateway.store import Store
 
 SYSTEM_ONE_PATH = "/v1/systemone"
 
@@ -120,7 +120,7 @@ class _Gateway:
         reason = first_rejection(self.model.requirements, observation)
         self._record(req, observation, tags, hit=False, reason=reason)
         if reason is not None:
-            raise RequirementNotMetError(f"{self.model.name}: response not accepted, {reason}")
+            raise ConstraintViolatedError(f"{self.model.name}: response not accepted, {reason}")
         return response
 
     def _record(

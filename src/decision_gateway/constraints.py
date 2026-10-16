@@ -1,12 +1,13 @@
-"""Requirements: which answers a model name accepts.
+"""Constraints: conditions on observations, and the helpers to build and check them.
 
-Used to prevent different models served by the same backend configuration from sharing
-answers, for example minor updates without a version jump.
+A model's requirements (ModelConfig.requirements, from its [models.<name>.requirements] table)
+are a list of constraints. They decide which observations (store/) count as that model's
+answers: when a request is looked up, and when a new response arrives. Used to prevent
+different models served by the same backend configuration from sharing answers, for example
+minor updates without a version jump.
 
-Every response is recorded as an observation (store.py). A model's requirements decide which
-observations count as that model's answers: when a request is looked up, and when a new
-response arrives. A response that is not accepted stays recorded, and the call raises
-RequirementNotMetError. A requirement can also stop a request before it is sent.
+A response that violates a constraint stays recorded, and the call raises
+ConstraintViolatedError. A constraint can also stop a request before it is sent.
 
 In models.toml, a model's requirements are a table of name = value:
 
@@ -25,7 +26,7 @@ A name is one of the built-ins below, or "module:name" for your own:
           cost = observation.cost or 0.0
           return None if cost <= at_most else f"cost {cost} is above {at_most}"
 
-- or a subclass of Requirement, built from the value the same way, which can also stop a
+- or a subclass of Constraint, built from the value the same way, which can also stop a
   request before it is sent (allows_sending).
 """
 
@@ -41,11 +42,11 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from .store import Observation
+    from decision_gateway.store import Observation
 
 
-class RequirementNotMetError(Exception):
-    """A request was not sent, or its response was not accepted, because of a requirement."""
+class ConstraintViolatedError(Exception):
+    """A request was not sent, or its response was not accepted, because of a constraint."""
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ class Asking:
     now: datetime  # UTC
 
 
-class Requirement(ABC):
+class Constraint(ABC):
     @abstractmethod
     def rejection(self, observation: Observation) -> str | None:
         """Why the observation does not count as an answer of this model, or None if it does."""
@@ -71,7 +72,7 @@ class Requirement(ABC):
         return type(self).__name__
 
 
-class FunctionRequirement(Requirement):
+class FunctionConstraint(Constraint):
     """A plain function as a requirement."""
 
     def __init__(self, function: Callable[[Observation], str | None], name: str) -> None:
@@ -86,7 +87,7 @@ class FunctionRequirement(Requirement):
         return self._name
 
 
-class SystemOneResponseModelId(Requirement):
+class SystemOneResponseModelId(Constraint):
     """The response's `model` is this id.
 
     In the System One API, a response's `model` names the model that served the request.
@@ -102,7 +103,7 @@ class SystemOneResponseModelId(Requirement):
         return None if served == self.model_id else f"served by {served!r}, not {self.model_id!r}"
 
 
-class OpenRouterResponseProvider(Requirement):
+class OpenRouterResponseProvider(Constraint):
     """The response's `provider` is this name ("TypeSafe"): OpenRouter adds it to every response."""
 
     def __init__(self, provider: str) -> None:
@@ -113,7 +114,7 @@ class OpenRouterResponseProvider(Requirement):
         return None if provider == self.provider else f"served by provider {provider!r}, not {self.provider!r}"
 
 
-class RequestDateRange(Requirement):
+class RequestDateRange(Constraint):
     """Only answers asked between two times count: [start, end], ISO strings or TOML datetimes
     (no offset means UTC). Requests outside the range are not sent.
 
@@ -136,28 +137,28 @@ class RequestDateRange(Requirement):
         return f"outside {_iso(self.start)} to {_iso(self.end)}"
 
 
-BUILTIN: dict[str, type[Requirement]] = {
+BUILTIN: dict[str, type[Constraint]] = {
     "systemone_response_model_id": SystemOneResponseModelId,
     "openrouter_response_provider": OpenRouterResponseProvider,
     "request_date_range": RequestDateRange,
 }
 
 
-def from_config(table: dict[str, Any]) -> list[Requirement]:
+def from_config(table: dict[str, Any]) -> list[Constraint]:
     """The requirements of a models.toml `requirements` table."""
-    out: list[Requirement] = []
+    out: list[Constraint] = []
     for name, value in table.items():
         target = BUILTIN.get(name) or _import(name)
         if isinstance(target, type):
-            requirement: Requirement = target(**value) if isinstance(value, dict) else target(value)
+            requirement: Constraint = target(**value) if isinstance(value, dict) else target(value)
         else:
             out_name = name.partition(":")[2] or name
-            requirement = FunctionRequirement(_bind(target, value), out_name)
+            requirement = FunctionConstraint(_bind(target, value), out_name)
         out.append(requirement)
     return out
 
 
-def first_rejection(requirements: Sequence[Requirement], observation: Observation) -> str | None:
+def first_rejection(requirements: Sequence[Constraint], observation: Observation) -> str | None:
     """None if every requirement accepts the observation, else the first reason it does not."""
     for r in requirements:
         if (reason := r.rejection(observation)) is not None:
@@ -165,10 +166,10 @@ def first_rejection(requirements: Sequence[Requirement], observation: Observatio
     return None
 
 
-def check_sending(model: str, requirements: Sequence[Requirement], asking: Asking) -> None:
+def check_sending(model: str, requirements: Sequence[Constraint], asking: Asking) -> None:
     for r in requirements:
         if (reason := r.allows_sending(asking)) is not None:
-            raise RequirementNotMetError(f"{model}: not sent, {reason} ({r.name})")
+            raise ConstraintViolatedError(f"{model}: not sent, {reason} ({r.name})")
 
 
 def _bind(function: Callable[..., str | None], value: Any) -> Callable[[Observation], str | None]:  # noqa: ANN401
@@ -181,15 +182,15 @@ def _bind(function: Callable[..., str | None], value: Any) -> Callable[[Observat
 
 
 def _import(target: str) -> Callable[..., Any]:
-    """A Requirement subclass or a function, by "module:name"."""
+    """A Constraint subclass or a function, by "module:name"."""
     module, _, name = target.partition(":")
     if not name:
         raise ValueError(f"unknown requirement {target!r}: not a built-in ({', '.join(BUILTIN)}) nor 'module:name'")
     found = getattr(importlib.import_module(module), name)
-    if isinstance(found, type) and not issubclass(found, Requirement):
-        raise TypeError(f"{target} is a class but not a Requirement")
+    if isinstance(found, type) and not issubclass(found, Constraint):
+        raise TypeError(f"{target} is a class but not a Constraint")
     if not callable(found):
-        raise TypeError(f"{target} is neither a Requirement nor a function")
+        raise TypeError(f"{target} is neither a Constraint nor a function")
     imported: Callable[..., Any] = found
     return imported
 

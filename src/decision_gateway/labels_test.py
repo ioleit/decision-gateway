@@ -3,10 +3,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 import httpx2
 
-from decision_gateway import Router, SQLiteStore, label_headers, labels
+from decision_gateway import Gateway, SQLiteStore, label_headers, labels
 from decision_gateway.labels import HEADER, current
-from decision_gateway.testing import FakeServer, choice
-from decision_gateway.transport import GatewayTransport
+from decision_gateway.testing import FakeTransport, choice
+from decision_gateway.transports.gateway_transport import GatewayTransport
 
 
 def test_context_manager_nested_and_restored() -> None:
@@ -46,15 +46,15 @@ def rows(store: SQLiteStore) -> list[tuple[object, ...]]:
     return store.con.execute("SELECT labels FROM requests ORDER BY at").fetchall()
 
 
-def test_router_labels_then_context_then_headers(store: SQLiteStore, server: FakeServer) -> None:
-    client = Router({"m": server.model("m")}, store, labels={"run": "r1", "item": 0}).client("m")
+def test_router_labels_then_context_then_headers(store: SQLiteStore, fake: FakeTransport) -> None:
+    client = Gateway({"m": fake.model("m")}, store, labels={"run": "r1", "item": 0}).client("m")
     with labels(item=1, page="a"):
         client.system_one(**choice("A", "B"), extra_headers=label_headers(item=2))
     assert rows(store) == [('{"item":2,"page":"a","run":"r1"}',)]
 
 
-def test_label_headers_survive_a_thread_pool(store: SQLiteStore, server: FakeServer) -> None:
-    client = Router({"m": server.model("m")}, store).client("m")
+def test_label_headers_survive_a_thread_pool(store: SQLiteStore, fake: FakeTransport) -> None:
+    client = Gateway({"m": fake.model("m")}, store).client("m")
     with labels(lost="yes"), ThreadPoolExecutor(4) as pool:  # context variables don't reach pool threads
         list(
             pool.map(
@@ -74,11 +74,11 @@ def test_the_labels_header_is_never_sent(store: SQLiteStore) -> None:
             200, json={"model": "m", "answers": {"pick": {"type": "noul", "noul": 0.5}}, "usage": {}}
         )
 
-    server = FakeServer()
-    gateway = GatewayTransport(server.model("m"), store, transport=httpx2.MockTransport(handler))
+    fake = FakeTransport()
+    transport = GatewayTransport(fake.model("m"), store, transport=httpx2.MockTransport(handler))
     headers = {"content-type": "application/json", **label_headers(item=1)}
     body = b'{"model": "m", "state": 1, "questions": {"pick": {"type": "noul", "instructions": "?"}}}'
-    gateway.handle_request(httpx2.Request("POST", "http://m.invalid/v1/systemone", headers=headers, content=body))
-    gateway.handle_request(httpx2.Request("GET", "http://m.invalid/v1/models", headers=headers))  # passed through
+    transport.handle_request(httpx2.Request("POST", "http://m.invalid/v1/systemone", headers=headers, content=body))
+    transport.handle_request(httpx2.Request("GET", "http://m.invalid/v1/models", headers=headers))  # passed through
     assert [HEADER in r.headers for r in sent] == [False, False]
     assert rows(store) == [('{"item":1}',)]

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from decision_gateway import SQLiteStore
-from decision_gateway.testing import FakeServer
+from decision_gateway.testing import FakeTransport
 
 
 @pytest.fixture
@@ -17,5 +17,5 @@ def store(tmp_path: Path) -> Iterator[SQLiteStore]:
 
 
 @pytest.fixture
-def server() -> FakeServer:
-    return FakeServer()
+def fake() -> FakeTransport:
+    return FakeTransport()

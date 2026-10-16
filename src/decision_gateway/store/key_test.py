@@ -1,6 +1,6 @@
 """The key format is frozen: these hashes must never change, or stored answers stop being found."""
 
-from decision_gateway.key import canonical, key
+from decision_gateway.store.key import canonical, key
 
 OPENROUTER = "https://openrouter.ai/api/v1/systemone"
 UNIFORM = "http://uniform.invalid/v1/systemone"

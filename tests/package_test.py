@@ -17,6 +17,7 @@ def test_wheel_contents(tmp_path: Path) -> None:
     (wheel,) = tmp_path.glob("*.whl")
     with zipfile.ZipFile(wheel) as z:
         names = z.namelist()
-    assert "decision_gateway/transport.py" in names
+    assert "decision_gateway/transports/gateway_transport.py" in names
+    assert "decision_gateway/store/sqlite.py" in names
     assert "decision_gateway/testing.py" in names
     assert not [n for n in names if n.endswith(("_test.py", "conftest.py"))]

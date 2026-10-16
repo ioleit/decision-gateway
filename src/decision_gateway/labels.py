@@ -2,7 +2,7 @@
 
 They come from three places, merged in this order (a later one wins for the same key):
 
-1. the router's or transport's own:  Router(..., labels={"project": "evals"})
+1. the gateway's or transport's own:  Gateway(..., labels={"project": "evals"})
 2. labels() around the call, as a context manager or a decorator (sync or async):
 
        with labels(item=17):

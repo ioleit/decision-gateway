@@ -2,11 +2,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from decision_gateway.requirements import (
+from decision_gateway.constraints import (
     Asking,
+    Constraint,
     OpenRouterResponseProvider,
     RequestDateRange,
-    Requirement,
     SystemOneResponseModelId,
     first_rejection,
     from_config,
@@ -33,7 +33,7 @@ def no_cost_known(observation: Observation) -> str | None:
     return None if observation.cost is None else "a cost is known"
 
 
-class MaxCost(Requirement):
+class MaxCost(Constraint):
     """A requirement as a class, loaded by "module:Name"."""
 
     def __init__(self, at_most: float) -> None:
@@ -88,7 +88,7 @@ def test_from_config_builtins_and_custom() -> None:
         {
             "systemone_response_model_id": "m",
             "request_date_range": ["2026-10-16T00:00:00Z", "2026-10-17T00:00:00Z"],
-            "decision_gateway.requirements_test:MaxCost": {"at_most": 0.01},
+            "decision_gateway.constraints_test:MaxCost": {"at_most": 0.01},
         }
     )
     assert [r.name for r in rs] == ["SystemOneResponseModelId", "RequestDateRange", "MaxCost"]
@@ -100,8 +100,8 @@ def test_from_config_builtins_and_custom() -> None:
 def test_plain_functions_as_requirements() -> None:
     rs = from_config(
         {
-            "decision_gateway.requirements_test:max_cost": {"at_most": 0.01},
-            "decision_gateway.requirements_test:no_cost_known": True,
+            "decision_gateway.constraints_test:max_cost": {"at_most": 0.01},
+            "decision_gateway.constraints_test:no_cost_known": True,
         }
     )
     assert [r.name for r in rs] == ["max_cost", "no_cost_known"]
@@ -114,7 +114,7 @@ def test_plain_functions_as_requirements() -> None:
 def test_from_config_errors() -> None:
     with pytest.raises(ValueError, match="unknown requirement 'served'"):
         from_config({"served": "x"})
-    with pytest.raises(TypeError, match="neither a Requirement nor a function"):
-        from_config({"decision_gateway.requirements_test:NOW": "x"})
-    with pytest.raises(TypeError, match="a class but not a Requirement"):
-        from_config({"decision_gateway.requirements_test:Observation": "x"})
+    with pytest.raises(TypeError, match="neither a Constraint nor a function"):
+        from_config({"decision_gateway.constraints_test:NOW": "x"})
+    with pytest.raises(TypeError, match="a class but not a Constraint"):
+        from_config({"decision_gateway.constraints_test:Observation": "x"})

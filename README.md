@@ -19,12 +19,12 @@ pip install decision-gateway
 ```python
 from typesafe_sdk import Noul
 
-from decision_gateway import Router, SQLiteStore, config, labels
+from decision_gateway import Gateway, SQLiteStore, config, labels
 
-router = Router(config.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"project": "evals"})
+gateway = Gateway(config.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"project": "evals"})
 eval_set = ["I was charged twice for my subscription.", "How do I change my password?"]
 
-with router.client("jev") as client:  # a typesafe_sdk.TypeSafeClient; router.async_client() for async
+with gateway.client("jev") as client:  # a typesafe_sdk.TypeSafeClient; gateway.async_client() for async
     for item, text in enumerate(eval_set):
         with labels(item=item):
             response = client.system_one(
@@ -35,7 +35,7 @@ with router.client("jev") as client:  # a typesafe_sdk.TypeSafeClient; router.as
 ```
 
 The client is the SDK's own, so everything the SDK offers works as before. Running the same
-requests again sends only what is not in the store. Each `router.client()` call builds a new
+requests again sends only what is not in the store. Each `gateway.client()` call builds a new
 SDK client with its own connections: make one per model and reuse it, as above.
 
 ### Labels
@@ -44,7 +44,7 @@ Labels say what a request was about, in your terms, for queries later. They don'
 is sent or which answer is used. They come from three places, a later one winning for the same
 key:
 
-- the router's: `Router(..., labels={"project": "evals"})`, on every request;
+- the gateway's: `Gateway(..., labels={"project": "evals"})`, on every request;
 - `labels(...)` around the call, as a context manager or as a decorator on a sync or async
   function: `@labels(study="demo")`;
 - `label_headers(...)` passed with the call: `client.system_one(..., extra_headers=label_headers(item=17))`.
@@ -102,7 +102,7 @@ openrouter_response_provider = "TypeSafe"                    # the provider Open
 ```
 
 A response that is not accepted is still recorded, and the call raises
-`RequirementNotMetError`. When a model changes, a new name with requirements for the new
+`ConstraintViolatedError`. When a model changes, a new name with requirements for the new
 version uses the responses already recorded from it, without asking again.
 
 A requirement of your own is a function that returns why an observation doesn't count, or
@@ -120,20 +120,25 @@ See `models.example.toml` for all built-ins and the details.
 
 ```
 src/decision_gateway/
-  transport.py       the gateway: GatewayTransport and AsyncGatewayTransport
-  labels.py          labels() and label_headers()
-  router.py          Router: SDK clients by model name, through the gateway
-  config.py          models.toml -> ModelConfig: how each model's client is configured
-  requirements.py    built-in requirements; functions or Requirement subclasses of your own
-  store.py           Store, SQLiteStore, Observation, RequestEvent
-  key.py             the request key
-  systemone.py       RoutedResponse: the SDK's response, keeping fields beyond the API
-  uniform.py         the uniform baseline, as a local transport
-  testing.py         FakeServer (a transport) and request helpers, for tests
-tests/               tests that span the package (the built wheel)
+  gateway.py                Gateway: SDK clients by model name (the entry point)
+  config.py                 models.toml -> ModelConfig (with its requirements: a list of constraints)
+  constraints.py            Constraint, the built-ins, FunctionConstraint, ConstraintViolatedError,
+                            from_config() and the checks
+  labels.py                 labels(), label_headers()
+  systemone.py              RoutedResponse: the SDK's response, keeping fields beyond the API
+  transports/
+    gateway_transport.py      GatewayTransport, AsyncGatewayTransport
+    uniform_transport.py      UniformTransport (sync and async)
+    fake_transport.py         FakeTransport, for tests
+  store/
+    base.py                   Store, Observation, RequestEvent
+    sqlite.py                 SQLiteStore
+    key.py                    the request key (what lookups use)
+  testing.py                choice() and FakeTransport, for tests
+tests/                      tests that span the package (the built wheel)
 ```
 
-Each module's unit tests sit next to it (`router.py`, `router_test.py`), one of the two layouts
+Each module's unit tests sit next to it (`gateway.py`, `gateway_test.py`), one of the two layouts
 pytest describes in [Choosing a test layout](https://docs.pytest.org/en/stable/explanation/goodpractices.html#choosing-a-test-layout).
 They are left out of the wheel.
 

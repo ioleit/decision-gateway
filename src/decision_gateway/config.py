@@ -12,19 +12,21 @@ from typing import TYPE_CHECKING, Any
 
 from typesafe_sdk import AsyncTypeSafeClient, RetryPolicy, TypeSafeClient
 
-from . import requirements, uniform
-from .transport import AsyncGatewayTransport, GatewayTransport
+from decision_gateway import constraints
+from decision_gateway.transports.gateway_transport import AsyncGatewayTransport, GatewayTransport
+from decision_gateway.transports.uniform_transport import BASE_URL as UNIFORM_URL
+from decision_gateway.transports.uniform_transport import UniformTransport
 
 if TYPE_CHECKING:
     import httpx2
 
-    from .store import Store
+    from decision_gateway.store import Store
 
 # Defaults per backend: where the SDK sends requests, which variable holds the key, compression.
 BACKENDS: dict[str, dict[str, Any]] = {
     "typesafe": {"base_url": None, "key_env": "TYPESAFE_API_KEY", "compression": None},
     "openrouter": {"base_url": "https://openrouter.ai/api", "key_env": "OPENROUTER_API_KEY", "compression": False},
-    "uniform": {"base_url": uniform.BASE_URL, "key_env": None, "compression": False},
+    "uniform": {"base_url": UNIFORM_URL, "key_env": None, "compression": False},
 }
 
 FIELDS = {
@@ -68,8 +70,8 @@ class ModelConfig:
         if self.compression is None:
             self.compression = defaults["compression"]
         if self.backend == "uniform" and self.transport is None:
-            self.transport = uniform.transport()
-        self.requirements: list[requirements.Requirement] = requirements.from_config(self.requirements_table)
+            self.transport = UniformTransport()
+        self.requirements: list[constraints.Constraint] = constraints.from_config(self.requirements_table)
 
     def client_options(self) -> dict[str, Any]:
         """Keyword arguments for TypeSafeClient and AsyncTypeSafeClient, without the transport."""

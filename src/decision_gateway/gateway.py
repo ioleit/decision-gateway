@@ -1,14 +1,14 @@
-"""Router: TypeSafe SDK clients by model name, all going through the gateway into one store.
+"""Gateway: TypeSafe SDK clients by model name, all going through the gateway into one store.
 
-    from decision_gateway import Router, SQLiteStore, config
+    from decision_gateway import Gateway, SQLiteStore, config
 
-    router = Router(config.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
-    client = router.client("jev")              # a typesafe_sdk.TypeSafeClient
+    gateway = Gateway(config.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
+    client = gateway.client("jev")              # a typesafe_sdk.TypeSafeClient
     client.system_one(state=..., questions={...})
 
 A name routes to the configuration in models.toml: where requests go, with which key, model
 id and requirements. The clients are the SDK's own, so everything the SDK offers is there.
-Every request made through them is recorded with the router's labels (and any set with
+Every request made through them is recorded with the gateway's labels (and any set with
 labels() around the call).
 """
 
@@ -21,11 +21,11 @@ if TYPE_CHECKING:
 
     from typesafe_sdk import AsyncTypeSafeClient, TypeSafeClient
 
-    from .config import ModelConfig
-    from .store import Store
+    from decision_gateway.config import ModelConfig
+    from decision_gateway.store import Store
 
 
-class Router:
+class Gateway:
     def __init__(self, models: Mapping[str, ModelConfig], store: Store, labels: dict[str, Any] | None = None) -> None:
         self.models = dict(models)
         self.store = store

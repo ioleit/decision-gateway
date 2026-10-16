@@ -2,10 +2,10 @@
 #
 # Copy this file to models.toml and keep the entries you need:
 #
-#     from decision_gateway import Router, SQLiteStore, config, labels
+#     from decision_gateway import Gateway, SQLiteStore, config, labels
 #
-#     router = Router(config.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
-#     client = router.client("jev")           # a typesafe_sdk.TypeSafeClient
+#     gateway = Gateway(config.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
+#     client = gateway.client("jev")           # a typesafe_sdk.TypeSafeClient
 #     with labels(item=17):
 #         response = client.system_one(state=..., questions={...})
 #
@@ -33,7 +33,7 @@
 # jump.
 #
 # Requirements are checked when stored answers are looked up and when a new response arrives.
-# A response that isn't accepted stays recorded, and the call raises RequirementNotMetError;
+# A response that isn't accepted stays recorded, and the call raises ConstraintViolatedError;
 # another name whose requirements accept it can use it without asking again.
 #
 #   systemone_response_model_id = "<id>"
@@ -63,7 +63,7 @@
 #
 #       and in models.toml:  "my_checks:max_cost" = { at_most = 0.001 }
 #
-#       Or a subclass of decision_gateway.Requirement, built from the value the same way, whose
+#       Or a subclass of decision_gateway.Constraint, built from the value the same way, whose
 #       rejection() does the same and whose allows_sending() can stop a request before it is sent.
 #
 #
