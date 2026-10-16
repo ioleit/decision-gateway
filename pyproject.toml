@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "decision-gateway"
+version = "0.0.1"
+description = "Compare System One decision models such as Jev without paying twice for the same answer: a gateway under the TypeSafe SDK that routes by model name, answers from what is known, and records everything."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = ["typesafe-sdk>=0.7.5,<0.8", "platformdirs>=4"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "build",
+    "ruff==0.17.1",
+    "mypy==2.4.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/decision_gateway"]
+# Tests live next to the modules (gateway.py, gateway_test.py) and stay out of the wheel;
+# tests/package_test.py checks it.
+exclude = ["*_test.py"]
+
+[tool.pytest.ini_options]
+# Unit tests next to the modules (<module>_test.py); tests/ holds the ones that span
+# the package (the built wheel).
+testpaths = ["src", "tests"]
+python_files = ["*_test.py"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+xfail_strict = true
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",       # docstrings: written where they help, judged in review, not by rule
+    "CPY001",  # copyright header in every file: LICENSE covers the project
+    "TRY003",  # long messages in exceptions: they carry the context to act on
+    "EM101",   # same, for string literals in exceptions
+    "EM102",   # same, for f-strings in exceptions
+    "COM812",  # conflicts with the formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: plain asserts, literal expected values, fixtures used only for their side effects.
+"**/*_test.py" = ["S101", "PLR2004", "SLF001", "ARG001", "S603"]
+"tests/**" = ["S101", "PLR2004", "S603", "INP001"]
+"conftest.py" = ["INP001"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["src", "tests", "conftest.py"]
+mypy_path = "src"
+explicit_package_bases = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool", "possibly-undefined"]
+

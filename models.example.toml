@@ -1,0 +1,199 @@
+# models.toml: the models, by name, and how the TypeSafe SDK client for each is configured.
+#
+# Copy this file to models.toml and keep the entries you need:
+#
+#     from decision_gateway import Gateway, SQLiteStore, config, labels
+#
+#     gateway = Gateway(config.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
+#     client = gateway.client("jev")           # a typesafe_sdk.TypeSafeClient
+#     with labels(item=17):
+#         response = client.system_one(state=..., questions={...})
+#
+#
+# ---- Fields -------------------------------------------------------------------------------
+#
+#   backend        "typesafe", "openrouter" or "uniform"; sets the defaults below
+#                                                                        (default "typesafe")
+#   model          the model id the client sends ("typesafe/jev-1.13")       (default: <name>)
+#   display_name   a readable name, for pages and reports                   (default: <name>)
+#   base_url       where the client sends requests; /v1/systemone is added
+#                      typesafe:   TypeSafe's API (the SDK's default)
+#                      openrouter: https://openrouter.ai/api
+#   key_env        the environment variable with the API key
+#                      typesafe:   TYPESAFE_API_KEY
+#                      openrouter: OPENROUTER_API_KEY
+#   extra_body     fields added to every request body where the call doesn't set them, e.g.
+#                  OpenRouter's provider routing:
+#                  { provider = { only = ["typesafe"], allow_fallbacks = false } } keeps every
+#                  answer with one provider. Part of the request, so part of what is looked up.
+#                  Other options: https://openrouter.ai/docs/features/provider-routing
+#   extra_headers  headers added to every request
+#   compression    false: send requests uncompressed       (openrouter: false; else the SDK's)
+#   timeout        seconds per request                                 (default: the SDK's)
+#   max_retries    retries on rate limits, server errors and timeouts  (default: the SDK's)
+#   cache          false: always ask; answers are still recorded                (default true)
+#   requirements   see below                                                     (default none)
+#
+#
+# ---- Requirements -------------------------------------------------------------------------
+#
+#   requirements = { <name> = <value>, ... }
+#
+# Which answers this name accepts. Used to prevent different models served by the same
+# backend configuration from sharing answers, for example minor updates without a version
+# jump.
+#
+# Requirements are checked when stored answers are looked up and when a new response arrives.
+# A response that isn't accepted stays recorded, and the call raises ConstraintViolatedError;
+# another name whose requirements accept it can use it without asking again.
+#
+#   systemone_response_model_id = "<id>"
+#       The response's `model` is this id. In the System One API, `model` names the model that
+#       served the request. OpenRouter puts its full model id there, with the release date
+#       ("typesafe/jev-1.13-20260917"), also when the request asked for "typesafe/jev-1.13" or
+#       an alias such as "jev-latest".
+#
+#   openrouter_response_provider = "<name>"
+#       The response's `provider` is this name ("TypeSafe"). OpenRouter adds it to every
+#       response.
+#
+#   request_date_range = ["<start>", "<end>"]
+#       Only answers asked between these times count, and requests outside them are not sent.
+#       ISO strings or TOML datetimes; no offset means UTC. A stopgap for models whose
+#       responses say nothing about which model answered: it keeps one run's answers to a short
+#       window, in which the model is assumed not to change.
+#
+#   "module:name" = <value>
+#       Your own: a function that returns why an observation does not count, or None if it does.
+#       A table value is passed as keyword arguments, true as nothing, anything else as one
+#       argument:
+#
+#           def max_cost(observation, at_most):
+#               cost = observation.cost or 0.0
+#               return None if cost <= at_most else f"cost {cost} is above {at_most}"
+#
+#       and in models.toml:  "my_checks:max_cost" = { at_most = 0.001 }
+#
+#       Or a subclass of decision_gateway.Constraint, built from the value the same way, whose
+#       rejection() does the same and whose allows_sending() can stop a request before it is sent.
+#
+#
+# ---- Examples -----------------------------------------------------------------------------
+#
+# Decision models on OpenRouter, checked 2026-10-16 against OpenRouter's endpoints API
+# (https://openrouter.ai/api/v1/models/<id>/endpoints) and one response from each. Prices are
+# per million input tokens from the provider pinned below; check them before a large run.
+#
+#   name                  OpenRouter id                     reports as `model`                         provider    $/M    context
+#   jev                   typesafe/jev-1.13                 typesafe/jev-1.13-20260917                 TypeSafe    0.042  262k
+#   pplx-decider          perplexity/pplx-decider-v1.1-27b  perplexity/pplx-decider-v1.1-27b-20261006  Perplexity  0.02   262k
+#   microsoft-decision-1  microsoft/microsoft-decision-1    microsoft/microsoft-decision-1-20261009    Azure       0.042  33k
+#   liquid-d1             liquid/d1                         liquid/d1-20260930                         Liquid      0.02   66k
+#   openai-decisions      openai/gpt-6-luna-decisions       openai/gpt-6-luna-decisions-20261006       OpenAI      0.10   1.05M
+#   clef                  cloudflare/clef                   cloudflare/clef (no release date)          Cloudflare  0.24   66k
+#   clef-flash            cloudflare/clef-flash             cloudflare/clef-flash (no release date)    Cloudflare  0.038  25k
+#
+# Clef is also served by PrimeIntellect ($0.042, 16k context) and DeepInfra ($0.24), Clef-flash
+# by DeepInfra ($0.019) and PrimeIntellect ($0.021). The provider pin in extra_body takes the
+# OpenRouter slug ("azure"); the response reports the provider's name ("Azure").
+#
+# Models that report a dated id are held to one release by systemone_response_model_id. Clef
+# and Clef-flash report the same id for every release, so a run of them should also get a
+# request_date_range (see clef-2026-10-16 below).
+
+# The baseline. Useful for trying the gateway and for comparing against.
+[models.uniform]
+backend = "uniform"
+
+[models.jev]
+backend = "openrouter"
+model = "typesafe/jev-1.13"
+display_name = "TypeSafe Jev 1.13"
+extra_body = { provider = { only = ["typesafe"], allow_fallbacks = false } }
+requirements = { systemone_response_model_id = "typesafe/jev-1.13-20260917", openrouter_response_provider = "TypeSafe" }
+
+[models.pplx-decider]
+backend = "openrouter"
+model = "perplexity/pplx-decider-v1.1-27b"
+display_name = "Perplexity Decider v1.1 27B"
+extra_body = { provider = { only = ["perplexity"], allow_fallbacks = false } }
+requirements = { systemone_response_model_id = "perplexity/pplx-decider-v1.1-27b-20261006", openrouter_response_provider = "Perplexity" }
+
+[models.microsoft-decision-1]
+backend = "openrouter"
+model = "microsoft/microsoft-decision-1"
+display_name = "Microsoft Decision-1"
+extra_body = { provider = { only = ["azure"], allow_fallbacks = false } }
+requirements = { systemone_response_model_id = "microsoft/microsoft-decision-1-20261009", openrouter_response_provider = "Azure" }
+
+[models.liquid-d1]
+backend = "openrouter"
+model = "liquid/d1"
+display_name = "Liquid d1"
+extra_body = { provider = { only = ["liquid"], allow_fallbacks = false } }
+requirements = { systemone_response_model_id = "liquid/d1-20260930", openrouter_response_provider = "Liquid" }
+
+[models.openai-decisions]
+backend = "openrouter"
+model = "openai/gpt-6-luna-decisions"
+display_name = "OpenAI GPT-6 Luna Decisions"
+extra_body = { provider = { only = ["openai"], allow_fallbacks = false } }
+requirements = { systemone_response_model_id = "openai/gpt-6-luna-decisions-20261006", openrouter_response_provider = "OpenAI" }
+
+[models.clef]
+backend = "openrouter"
+model = "cloudflare/clef"
+display_name = "Cloudflare Clef"
+extra_body = { provider = { only = ["cloudflare"], allow_fallbacks = false } }
+requirements = { openrouter_response_provider = "Cloudflare" }
+
+[models.clef-flash]
+backend = "openrouter"
+model = "cloudflare/clef-flash"
+display_name = "Cloudflare Clef Flash"
+extra_body = { provider = { only = ["cloudflare"], allow_fallbacks = false } }
+requirements = { openrouter_response_provider = "Cloudflare" }
+
+# The rest are templates: replace the names, ids, dates and hosts with your own.
+
+# One run of Clef, held to a one-day window, since its responses don't say which release answered.
+# [models.clef-2026-10-16]
+# backend = "openrouter"
+# model = "cloudflare/clef"
+# extra_body = { provider = { only = ["cloudflare"], allow_fallbacks = false } }
+# requirements = { openrouter_response_provider = "Cloudflare", request_date_range = ["2026-10-16T09:00:00Z", "2026-10-17T09:00:00Z"] }
+
+# Clef from any provider: answers may come from any of them, so stored ones are not reused
+# (they are still recorded).
+# [models.clef-any-provider]
+# backend = "openrouter"
+# model = "cloudflare/clef"
+# cache = false
+
+# Jev directly from TypeSafe. (The response's `model` there is TypeSafe's own name for the
+# release, such as "jev-1.13.0"; check what it reports before you require it.)
+# [models.jev-typesafe]
+# model = "jev-1.13"
+# display_name = "Jev 1.13 (TypeSafe)"
+# requirements = { systemone_response_model_id = "jev-1.13.0" }
+
+# Custom System One server. It reports the exact version in the response's `model`, and the
+# requirement holds this name to one version.
+# [models.decider-4b]
+# base_url = "http://localhost:8000"
+# key_env = "DECIDER_API_KEY"
+# model = "decider-4b"
+# timeout = 120
+# max_retries = 5
+# requirements = { systemone_response_model_id = "decider-4b@3f2a9c1" }
+
+# Custom requirement.
+# [models.jev-cheap]
+# backend = "openrouter"
+# model = "typesafe/jev-1.13"
+# requirements = { "my_checks:max_cost" = { at_most = 0.001 } }
+
+# Baseline model.
+# [models.uniform-uncached]
+# backend = "uniform"
+# cache = false
