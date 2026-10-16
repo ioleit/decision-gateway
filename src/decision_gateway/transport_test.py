@@ -17,15 +17,15 @@ def rows(store: SQLiteStore, sql: str) -> list[tuple[object, ...]]:
 
 
 def test_a_miss_is_sent_and_recorded_then_a_hit_is_not(store: SQLiteStore, server: FakeServer) -> None:
-    client = Router({"m": server.model("m")}, store, project="evals", run="r1").client("m")
+    client = Router({"m": server.model("m")}, store, labels={"run": "r1"}).client("m")
     first = client.system_one(**choice("A", "B"))
     second = client.system_one(**choice("A", "B"))
     assert server.calls == 1
     assert first == second
     assert rows(store, "SELECT count(*) FROM observations") == [(1,)]
-    assert rows(store, "SELECT project, run, model, hit, accepted FROM requests ORDER BY at") == [
-        ("evals", "r1", "m", 0, 1),
-        ("evals", "r1", "m", 1, 1),
+    assert rows(store, "SELECT labels, model, hit, accepted FROM requests ORDER BY at") == [
+        ('{"run":"r1"}', "m", 0, 1),
+        ('{"run":"r1"}', "m", 1, 1),
     ]
 
 
@@ -54,6 +54,17 @@ def test_labels_and_extra_fields(store: SQLiteStore, server: FakeServer) -> None
     client.system_one(**choice("A", "B"))
     assert response.model_extra == {"id": "gen-1", "provider": "Fake"}
     assert rows(store, "SELECT labels FROM requests ORDER BY at") == [('{"item":17,"study":"demo"}',), ("{}",)]
+
+
+def test_the_routers_labels_go_with_every_request_and_a_calls_own_win(store: SQLiteStore, server: FakeServer) -> None:
+    client = Router({"m": server.model("m")}, store, labels={"project": "evals", "run": "r1"}).client("m")
+    client.system_one(**choice("A", "B"))
+    with labels(run="r2", item=3):
+        client.system_one(**choice("A", "B"))
+    assert rows(store, "SELECT labels FROM requests ORDER BY at") == [
+        ('{"project":"evals","run":"r1"}',),
+        ('{"item":3,"project":"evals","run":"r2"}',),
+    ]
 
 
 def test_extra_body_from_the_config_is_sent_and_keyed(store: SQLiteStore, server: FakeServer) -> None:
@@ -174,7 +185,7 @@ def test_other_endpoints_pass_through(store: SQLiteStore) -> None:
 
 
 def test_async(store: SQLiteStore, server: FakeServer) -> None:
-    router = Router({"m": server.model("m")}, store, project="web")
+    router = Router({"m": server.model("m")}, store, labels={"app": "web"})
 
     async def run() -> None:
         async with router.async_client("m") as client:
@@ -184,9 +195,9 @@ def test_async(store: SQLiteStore, server: FakeServer) -> None:
 
     asyncio.run(run())
     assert server.calls == 1
-    assert rows(store, "SELECT project, hit, labels FROM requests ORDER BY at") == [
-        ("web", 0, '{"page":"ask"}'),
-        ("web", 1, '{"page":"ask"}'),
+    assert rows(store, "SELECT hit, labels FROM requests ORDER BY at") == [
+        (0, '{"app":"web","page":"ask"}'),
+        (1, '{"app":"web","page":"ask"}'),
     ]
 
 

@@ -2,17 +2,19 @@
 
     from decision_gateway import Router, SQLiteStore, models
 
-    router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), project="evals", run="2026-10")
+    router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
     client = router.client("jev")              # a typesafe_sdk.TypeSafeClient
     client.system_one(state=..., questions={...})
 
 A name routes to the configuration in models.toml: where requests go, with which key, model
 id and requirements. The clients are the SDK's own, so everything the SDK offers is there.
+Every request made through them is recorded with the router's labels (and any set with
+labels() around the call).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -24,13 +26,10 @@ if TYPE_CHECKING:
 
 
 class Router:
-    def __init__(
-        self, models: Mapping[str, Model], store: Store, project: str | None = None, run: str | None = None
-    ) -> None:
+    def __init__(self, models: Mapping[str, Model], store: Store, labels: dict[str, Any] | None = None) -> None:
         self.models = dict(models)
         self.store = store
-        self.project = project
-        self.run = run
+        self.labels = dict(labels or {})
 
     def model(self, name: str) -> Model:
         try:
@@ -40,8 +39,8 @@ class Router:
 
     def client(self, name: str) -> TypeSafeClient:
         """A TypeSafeClient for the model `name`, through the gateway."""
-        return self.model(name).client(self.store, self.project, self.run)
+        return self.model(name).client(self.store, self.labels)
 
     def async_client(self, name: str) -> AsyncTypeSafeClient:
         """An AsyncTypeSafeClient for the model `name`, through the gateway."""
-        return self.model(name).async_client(self.store, self.project, self.run)
+        return self.model(name).async_client(self.store, self.labels)

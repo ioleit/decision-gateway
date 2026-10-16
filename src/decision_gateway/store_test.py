@@ -28,12 +28,10 @@ def test_observations_are_found_by_key_oldest_first(tmp_path: Path) -> None:
 
 def test_requests_are_recorded(tmp_path: Path) -> None:
     with SQLiteStore(tmp_path / "s.sqlite") as store:
-        event = RequestEvent("r1", T0, "jev", "k", "evals", "run1", {"item": 1}, "1", hit=True, accepted=True)
+        event = RequestEvent("r1", T0, "jev", "k", {"run": "r1", "item": 1}, "1", hit=True, accepted=True)
         store.append_request(event)
-        row = store.con.execute(
-            "SELECT project, run, model, labels, observation, hit, accepted FROM requests"
-        ).fetchone()
-        assert row == ("evals", "run1", "jev", '{"item":1}', "1", 1, 1)
+        row = store.con.execute("SELECT model, labels, observation, hit, accepted FROM requests").fetchone()
+        assert row == ("jev", '{"item":1,"run":"r1"}', "1", 1, 1)
 
 
 def test_reopen_keeps_everything(tmp_path: Path) -> None:

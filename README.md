@@ -21,7 +21,7 @@ from typesafe_sdk import Noul
 
 from decision_gateway import Router, SQLiteStore, labels, models
 
-router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), project="evals", run="2026-10")
+router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"project": "evals", "run": "2026-10"})
 client = router.client("jev")  # a typesafe_sdk.TypeSafeClient; router.async_client() for async
 
 with labels(item=17):
@@ -31,6 +31,10 @@ with labels(item=17):
     )
 response.nouls["refund"].noul
 ```
+
+Labels say what a request was about, in your terms, for queries later: the router's labels
+go with every request made through its clients, and `labels()` adds more around a call. They
+don't affect what is sent or which answer is used.
 
 The client is the SDK's own, so everything the SDK offers works as before. Running the same
 requests again sends only what is not in the store.
@@ -58,8 +62,7 @@ One store, append-only (`SQLiteStore` for now; `Store` is the interface):
 - **observations**: every response received, with what was sent, where, the response as
   received, the model and provider it reports, when, and the cost. Responses a model's
   requirements did not accept are kept too.
-- **requests**: every request made through the gateway: when, project, run, labels, model
-  name, which observation answered it, whether it came from the store, and whether it was
+- **requests**: every request made through the gateway: when, labels, model name, which observation answered it, whether it came from the store, and whether it was
   accepted.
 
 A request is answered from the store when there is an observation for the same request (the

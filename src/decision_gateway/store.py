@@ -3,8 +3,8 @@
     observations  every response received: what was sent, where, the response as received,
                   who answered (the model and provider it reports), when, and the cost.
                   Responses that a model's requirements did not accept are kept too.
-    requests      every request made through the gateway: when, by which project and run,
-                  with which labels, to which model name; which observation answered it,
+    requests      every request made through the gateway: when, with which labels, to which
+                  model name; which observation answered it,
                   whether it came from the store (a hit), and whether it was accepted.
 
 Nothing is updated or deleted. Stored answers are found by key (key.py) and then filtered by
@@ -64,8 +64,6 @@ class RequestEvent:
     at: datetime  # UTC
     model: str  # the name in models.toml
     key: str
-    project: str | None = None
-    run: str | None = None
     labels: dict[str, Any] = field(default_factory=dict)
     observation: str | None = None  # the observation that answered, if any
     hit: bool = False  # answered from the store, without a call
@@ -100,8 +98,6 @@ CREATE INDEX IF NOT EXISTS observations_key ON observations (key, asked_at);
 CREATE TABLE IF NOT EXISTS requests (
     id           TEXT PRIMARY KEY,
     at           TEXT NOT NULL,  -- UTC, ISO 8601
-    project      TEXT,
-    run          TEXT,
     model        TEXT NOT NULL,  -- the name in models.toml
     key          TEXT NOT NULL,
     labels       TEXT NOT NULL,  -- JSON object
@@ -110,7 +106,6 @@ CREATE TABLE IF NOT EXISTS requests (
     accepted     INTEGER NOT NULL,
     reason       TEXT            -- why the observation was not accepted
 );
-CREATE INDEX IF NOT EXISTS requests_project_run ON requests (project, run);
 """
 
 
@@ -150,10 +145,10 @@ class SQLiteStore:
 
     def append_request(self, e: RequestEvent) -> None:
         self.con.execute(
-            "INSERT INTO requests (id, at, project, run, model, key, labels, observation, hit, accepted, reason) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (e.id, _iso(e.at), e.project, e.run, e.model, e.key, canonical(e.labels), e.observation, int(e.hit),
-             int(e.accepted), e.reason),
+            "INSERT INTO requests (id, at, model, key, labels, observation, hit, accepted, reason) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (e.id, _iso(e.at), e.model, e.key, canonical(e.labels), e.observation, int(e.hit), int(e.accepted),
+             e.reason),
         )  # fmt: skip
 
     def observations(self, key: str) -> list[Observation]:

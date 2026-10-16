@@ -88,16 +88,17 @@ class Model:
             options["retry"] = RetryPolicy(max_retries=self.max_retries)
         return options
 
-    def client(self, store: Store, project: str | None = None, run: str | None = None) -> TypeSafeClient:
-        """A TypeSafeClient for this model whose requests go through the gateway."""
+    def client(self, store: Store, labels: dict[str, Any] | None = None) -> TypeSafeClient:
+        """A TypeSafeClient for this model whose requests go through the gateway, recorded with
+        these labels."""
         transport: httpx2.BaseTransport | None = self.transport
-        gateway = GatewayTransport(self, store, project, run, transport=transport)
+        gateway = GatewayTransport(self, store, labels, transport=transport)
         return TypeSafeClient(**self.client_options(), transport=gateway)
 
-    def async_client(self, store: Store, project: str | None = None, run: str | None = None) -> AsyncTypeSafeClient:
+    def async_client(self, store: Store, labels: dict[str, Any] | None = None) -> AsyncTypeSafeClient:
         """An AsyncTypeSafeClient for this model whose requests go through the gateway."""
         transport: httpx2.AsyncBaseTransport | None = self.transport
-        gateway = AsyncGatewayTransport(self, store, project, run, transport=transport)
+        gateway = AsyncGatewayTransport(self, store, labels, transport=transport)
         return AsyncTypeSafeClient(**self.client_options(), transport=gateway)
 
 

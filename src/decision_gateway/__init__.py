@@ -3,7 +3,7 @@ routed by model name, answered from what is already known, and recorded.
 
     from decision_gateway import Router, SQLiteStore, models
 
-    router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), project="evals")
+    router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"project": "evals"})
     client = router.client("jev")                 # a typesafe_sdk.TypeSafeClient
     with labels(item=17):
         client.system_one(state=..., questions={...})

@@ -1,6 +1,6 @@
 """The gateway: an HTTP transport that the TypeSafe SDK client sends its requests through.
 
-    client = TypeSafeClient(..., transport=GatewayTransport(model, store, project="evals"))
+    client = TypeSafeClient(..., transport=GatewayTransport(model, store, labels={"project": "evals"}))
 
 The client stays the SDK's own. For each System One request (POST .../v1/systemone with a
 JSON body), the gateway
@@ -12,7 +12,8 @@ JSON body), the gateway
 2. otherwise checks that the requirements allow sending, sends the request, and records the
    response as an observation; if the requirements don't accept it, the call raises
    RequirementNotMetError, and the observation stays recorded;
-3. records every request, hit or not, with project, run and labels (see labels()).
+3. records every request, hit or not, with its labels: the transport's own, merged with
+   those set by labels() around the call.
 
 Everything else passes through unchanged and unrecorded: other endpoints, failed responses
 (the SDK raises and retries as usual), and requests with assets or a compressed body, which
@@ -50,7 +51,8 @@ _labels: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar("decisi
 
 @contextmanager
 def labels(**values: Any) -> Iterator[None]:  # noqa: ANN401 (any JSON value)
-    """Labels for the requests made inside the block, merged with any outer labels:
+    """Labels for the requests made inside the block, merged over any outer ones and over the
+    transport's own labels:
 
     with labels(study="demo", item=17):
         client.system_one(...)
@@ -72,11 +74,10 @@ class _Request:
 
 
 class _Gateway:
-    def __init__(self, model: Model, store: Store, project: str | None, run: str | None) -> None:
+    def __init__(self, model: Model, store: Store, labels: dict[str, Any] | None) -> None:
         self.model = model
         self.store = store
-        self.project = project
-        self.run = run
+        self.labels = dict(labels or {})
 
     def _parse(self, request: httpx2.Request) -> _Request | None:
         """The System One request to handle, or None to pass it through."""
@@ -141,9 +142,7 @@ class _Gateway:
                 at=_now(),
                 model=self.model.name,
                 key=req.key,
-                project=self.project,
-                run=self.run,
-                labels=_labels.get(),
+                labels={**self.labels, **_labels.get()},
                 observation=observation.id,
                 hit=hit,
                 accepted=reason is None,
@@ -159,11 +158,10 @@ class GatewayTransport(_Gateway, httpx2.BaseTransport):
         self,
         model: Model,
         store: Store,
-        project: str | None = None,
-        run: str | None = None,
+        labels: dict[str, Any] | None = None,
         transport: httpx2.BaseTransport | None = None,
     ) -> None:
-        super().__init__(model, store, project, run)
+        super().__init__(model, store, labels)
         self.transport = transport or httpx2.HTTPTransport()
 
     def handle_request(self, request: httpx2.Request) -> httpx2.Response:
@@ -190,11 +188,10 @@ class AsyncGatewayTransport(_Gateway, httpx2.AsyncBaseTransport):
         self,
         model: Model,
         store: Store,
-        project: str | None = None,
-        run: str | None = None,
+        labels: dict[str, Any] | None = None,
         transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
-        super().__init__(model, store, project, run)
+        super().__init__(model, store, labels)
         self.transport = transport or httpx2.AsyncHTTPTransport()
 
     async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:

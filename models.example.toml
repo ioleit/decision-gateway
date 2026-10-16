@@ -4,7 +4,7 @@
 #
 #     from decision_gateway import Router, SQLiteStore, labels, models
 #
-#     router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), project="evals", run="2026-10")
+#     router = Router(models.load("models.toml"), SQLiteStore("evals.sqlite"), labels={"run": "2026-10"})
 #     client = router.client("jev")           # a typesafe_sdk.TypeSafeClient
 #     with labels(item=17):
 #         response = client.system_one(state=..., questions={...})
@@ -17,7 +17,7 @@
 #
 # Every response is recorded as an observation: what was sent, where, the response as
 # received, the model and provider it reports, when, and the cost. Every request is recorded
-# too: project, run, labels, model name, which observation answered it, and whether it came
+# too: its labels, model name, which observation answered it, and whether it came
 # from the store. A request is answered from the store when an observation for the same
 # request (the body as sent, to the same endpoint) is there and the model's requirements
 # accept it. Errors (HTTP errors, timeouts) are raised and not recorded. Requests with assets
