@@ -8,20 +8,29 @@
 #     client = gateway.client("jev")           # a typesafe_sdk.TypeSafeClient
 #     with labels(item=17):
 #         response = client.system_one(state=..., questions={...})
+# ---- Fields -------------------------------------------------------------------------------
 #
-# The client is the SDK's own; its requests go through the gateway, which answers from the
-# store what was asked before and records every request and response.
-#
-#
-# ---- The store ----------------------------------------------------------------------------
-#
-# Every response is recorded as an observation: what was sent, where, the response as
-# received, the model and provider it reports, when, and the cost. Every request is recorded
-# too: its labels, model name, which observation answered it, and whether it came
-# from the store. A request is answered from the store when an observation for the same
-# request (the body as sent, to the same endpoint) is there and the model's requirements
-# accept it. Errors (HTTP errors, timeouts) are raised and not recorded. Requests with assets
-# (images) are sent but not recorded yet.
+#   backend        "typesafe", "openrouter" or "uniform"; sets the defaults below
+#                                                                        (default "typesafe")
+#   model          the model id the client sends ("typesafe/jev-1.13")       (default: <name>)
+#   display_name   a readable name, for pages and reports                   (default: <name>)
+#   base_url       where the client sends requests; /v1/systemone is added
+#                      typesafe:   TypeSafe's API (the SDK's default)
+#                      openrouter: https://openrouter.ai/api
+#   key_env        the environment variable with the API key
+#                      typesafe:   TYPESAFE_API_KEY
+#                      openrouter: OPENROUTER_API_KEY
+#   extra_body     fields added to every request body where the call doesn't set them, e.g.
+#                  OpenRouter's provider routing:
+#                  { provider = { only = ["typesafe"], allow_fallbacks = false } } keeps every
+#                  answer with one provider. Part of the request, so part of what is looked up.
+#                  Other options: https://openrouter.ai/docs/features/provider-routing
+#   extra_headers  headers added to every request
+#   compression    false: send requests uncompressed       (openrouter: false; else the SDK's)
+#   timeout        seconds per request                                 (default: the SDK's)
+#   max_retries    retries on rate limits, server errors and timeouts  (default: the SDK's)
+#   cache          false: always ask; answers are still recorded                (default true)
+#   requirements   see below                                                     (default none)
 #
 #
 # ---- Requirements -------------------------------------------------------------------------
@@ -67,34 +76,6 @@
 #       rejection() does the same and whose allows_sending() can stop a request before it is sent.
 #
 #
-# ---- Fields -------------------------------------------------------------------------------
-#
-#   backend        "typesafe", "openrouter" or "uniform"; sets the defaults below
-#                                                                        (default "typesafe")
-#   model          the model id the client sends ("typesafe/jev-1.13")       (default: <name>)
-#   display_name   a readable name, for pages and reports                   (default: <name>)
-#   base_url       where the client sends requests; /v1/systemone is added
-#                      typesafe:   TypeSafe's API (the SDK's default)
-#                      openrouter: https://openrouter.ai/api
-#   key_env        the environment variable with the API key
-#                      typesafe:   TYPESAFE_API_KEY
-#                      openrouter: OPENROUTER_API_KEY
-#   extra_body     fields added to every request body where the call doesn't set them, e.g.
-#                  OpenRouter's provider routing:
-#                  { provider = { only = ["typesafe"], allow_fallbacks = false } } keeps every
-#                  answer with one provider. Part of the request, so part of what is looked up.
-#                  Other options: https://openrouter.ai/docs/features/provider-routing
-#   extra_headers  headers added to every request
-#   compression    false: send requests uncompressed       (openrouter: false; else the SDK's)
-#   timeout        seconds per request                                 (default: the SDK's)
-#   max_retries    retries on rate limits, server errors and timeouts  (default: the SDK's)
-#   cache          false: always ask; answers are still recorded                (default true)
-#   requirements   see above                                                     (default none)
-#
-#   backend = "uniform" is a local baseline that gives every option the same probability: no
-#   network, no key, no cost, answers valid System One responses.
-#
-#
 # ---- Examples -----------------------------------------------------------------------------
 
 # The baseline. Useful for trying the gateway and for comparing against.
@@ -136,7 +117,7 @@ openrouter_response_provider = "TypeSafe"
 # model = "example-org/decider"
 # cache = false
 
-# Your own System One server. It reports the exact version in the response's `model`, and the
+# Custom System One server. It reports the exact version in the response's `model`, and the
 # requirement holds this name to one version.
 # [models.decider-4b]
 # base_url = "http://localhost:8000"
@@ -146,13 +127,13 @@ openrouter_response_provider = "TypeSafe"
 # max_retries = 5
 # requirements = { systemone_response_model_id = "decider-4b@3f2a9c1" }
 
-# A requirement of your own.
+# Custom requirement.
 # [models.jev-cheap]
 # backend = "openrouter"
 # model = "typesafe/jev-1.13"
 # requirements = { "my_checks:max_cost" = { at_most = 0.001 } }
 
-# The baseline, asked every time.
+# Baseline model.
 # [models.uniform-uncached]
 # backend = "uniform"
 # cache = false

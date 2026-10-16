@@ -1,23 +1,14 @@
 # decision-gateway
 
-Compare System One decision models such as Jev on your own questions, without paying twice
-for the same answer, and with a record of what each model actually said.
+Scaffolding to work with decision models, allowing to divert traffic to different models based and keep a decision log that can serve both as as a cache but also exported and queried in offline analysis of decisions. 
 
-decision-gateway sits underneath TypeSafe's Python SDK
-([`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/)). Your code keeps using the SDK's own
-client. Its requests pass through the gateway, which
+The gateway sits underneath TypeSafe's Python SDK
+([`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/)). Code keeps using the SDK's own client, but its requests pass through the gateway, which
 
-- **routes** each model name to its configuration: endpoint, key, model id, provider pin;
-- **answers from what is known**: a request answered before is served from the store;
-- **records everything**: every request and every response, with the model that actually
-  answered, when, at what cost, and labels in your own terms.
+- **routes** each model name to its configuration: endpoint, key, model id, customizable other constraints
+- **records decisions**: every request and every response, with arbirraty application side labels.
+- **answers locally**: with single forward pass, decision models are close to determinstic, so the answers can be source from an application-side cache.
 
-Which responses count as a model's answers is decided by constraints on what the response
-reports, such as the exact release that served it. A model that changes behind the same name
-doesn't mix its answers with the old one's, and nothing paid for is thrown away.
-
-Status: early. Models are reached through TypeSafe's API, OpenRouter, any System One server,
-or `uniform`, a local baseline that gives every option equal probability.
 
 ## Install
 
@@ -45,15 +36,10 @@ with gateway.client("jev") as client:  # a typesafe_sdk.TypeSafeClient; gateway.
         response.nouls["refund"].noul
 ```
 
-The client is the SDK's own, so everything the SDK offers works as before. Running the same
-requests again sends only what is not in the store. Each `gateway.client()` call builds a new
-SDK client with its own connections: make one per model and reuse it, as above.
 
-### Labels
+### Decision Log Labels
 
-Labels say what a request was about, in your terms, for queries later. They don't affect what
-is sent or which answer is used. They come from three places, a later one winning for the same
-key:
+Labels are arbitrary data attached to a request that are used to query the decision log.
 
 - the gateway's: `Gateway(..., labels={"project": "evals"})`, on every request;
 - `labels(...)` around the call, as a context manager or as a decorator on a sync or async
@@ -70,20 +56,9 @@ key, model id, provider pin) and which answers each accepts.
 [`models.example.toml`](models.example.toml) describes every field, with examples; copy it to
 start.
 
-The gateway is an httpx transport, so it also works with a client you configure yourself:
+## Decision Store
 
-```python
-from typesafe_sdk import TypeSafeClient
-
-from decision_gateway import GatewayTransport, SQLiteStore, config
-
-gateway = GatewayTransport(config.load("models.toml")["jev"], SQLiteStore("evals.sqlite"))
-client = TypeSafeClient(model="jev-1.13", transport=gateway)
-```
-
-## What is recorded
-
-One store, append-only (`SQLiteStore` for now; `Store` is the interface):
+Decision Store keeps:
 
 - **observations**: every response received, with what was sent, where, the response as
   received, the model and provider it reports, when, and the cost. Responses a model's
@@ -91,79 +66,18 @@ One store, append-only (`SQLiteStore` for now; `Store` is the interface):
 - **requests**: every request made through the gateway: when, labels, model name, which
   observation answered it, whether it came from the store, and whether it was accepted.
 
-The store's file is wherever you put it; `SQLiteStore()` without a path uses
-`$DECISION_GATEWAY_STORE`, or `store.sqlite` in the platform's user data directory.
-
 A request is answered from the store when there is an observation for the same request (the
-body as sent, to the same endpoint) that the model's requirements accept. The key is frozen by
-golden hashes (`src/decision_gateway/key_test.py`).
+body as sent, to the same endpoint) that the model's requirements accept. 
 
-Errors (HTTP errors, timeouts) are raised by the SDK as usual and not recorded. Requests with
-assets (images) are sent but not recorded yet.
+Currently there is only a simple `SQLiteStore` implementation of `Store` that is useful for single-task exploration or demos.
 
-## Requirements
 
-Which answers a model name accepts. Used to prevent different models served by the same
-backend configuration from sharing answers, for example minor updates without a version jump:
+## Model Configuration
 
-```toml
-[models.jev.requirements]
-systemone_response_model_id = "typesafe/jev-1.13-20260917"   # the model the response reports
-openrouter_response_provider = "TypeSafe"                    # the provider OpenRouter reports
-```
-
-A response that is not accepted is still recorded, and the call raises
-`ConstraintViolatedError`. When a model changes, a new name with requirements for the new
-version uses the responses already recorded from it, without asking again.
-
-A requirement of your own is a function that returns why an observation doesn't count, or
-`None` if it does, named in `models.toml` as `"module:function"`:
-
-```python
-def max_cost(observation, at_most):
-    cost = observation.cost or 0.0
-    return None if cost <= at_most else f"cost {cost} is above {at_most}"
-```
+The set of available models can be defined in `models.toml`.
 
 See `models.example.toml` for all built-ins and the details.
 
-## Layout
-
-```
-src/decision_gateway/
-  gateway.py                Gateway: SDK clients by model name (the entry point)
-  config.py                 models.toml -> ModelConfig (with its requirements: a list of constraints)
-  constraints.py            Constraint, the built-ins, FunctionConstraint, ConstraintViolatedError,
-                            from_config() and the checks
-  labels.py                 labels(), label_headers()
-  systemone.py              RoutedResponse: the SDK's response, keeping fields beyond the API
-  transports/
-    gateway_transport.py      GatewayTransport, AsyncGatewayTransport
-    uniform_transport.py      UniformTransport (sync and async)
-    fake_transport.py         FakeTransport, for tests
-  store/
-    base.py                   Store, Observation, RequestEvent
-    sqlite.py                 SQLiteStore
-    key.py                    the request key (what lookups use)
-  testing.py                choice() and FakeTransport, for tests
-tests/                      tests that span the package (the built wheel)
-```
-
-Each module's unit tests sit next to it (`gateway.py`, `gateway_test.py`), one of the two layouts
-pytest describes in [Choosing a test layout](https://docs.pytest.org/en/stable/explanation/goodpractices.html#choosing-a-test-layout).
-They are left out of the wheel.
-
-## Development
-
-```bash
-pip install -e '.[dev]'
-ruff check . && ruff format --check .   # every rule, with the exceptions listed in pyproject.toml
-mypy                                    # strict
-pytest                                  # warnings are errors
-```
-
-CI runs the same on every pull request (`.github/workflows/ci.yml`), with pytest on Python
-3.11 to 3.14.
 
 ## License
 
