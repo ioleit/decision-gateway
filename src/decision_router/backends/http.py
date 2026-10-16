@@ -14,6 +14,8 @@ import urllib.error
 import urllib.request
 from http import HTTPStatus
 
+from decision_router.result import Refusal
+
 from .base import Backend, JSONObject, Reply
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/systemone"
@@ -23,8 +25,9 @@ class TransientError(Exception):
     """A failure worth retrying: HTTP 429 or 5xx, a timeout, a dropped connection."""
 
 
-class RefusalError(Exception):
-    """The provider declined to answer; not retried, not cached."""
+class _Refused(Exception):  # noqa: N818 (internal signal, not an error)
+    def __init__(self, refusal: Refusal, body: JSONObject) -> None:
+        self.refusal, self.body = refusal, body
 
 
 class MissingKeyError(Exception):
@@ -68,7 +71,10 @@ class HTTP(Backend):
         return url.format_map(env), headers
 
     def call(self, wire: JSONObject, request: JSONObject) -> Reply:
-        raw = self._post_with_retries(*self._url_and_headers(), wire)
+        try:
+            raw = self._post_with_retries(*self._url_and_headers(), wire)
+        except _Refused as refused:
+            return Reply(None, refusal=refused.refusal, raw=refused.body)
         wrapper = self.entry.get("unwrap")
         response = raw[wrapper] if wrapper else raw
         usage = response.get("usage") or {}
@@ -95,15 +101,24 @@ class HTTP(Backend):
             with e:  # an HTTPError holds the open response
                 text = e.read().decode(errors="replace")
             # OpenRouter reports a refusal as an HTTP error whose body says so, e.g.
-            # 502 {"error": {"message": "... refused to answer question \"q\""}}. The System One
-            # API has no answer for it, so it is an error: not retried, not cached.
+            # 502 {"error": {"code": 502, "message": "OpenAI refused to answer question \"q\""}}.
+            # The System One API has no answer for it; it is a result all the same (not retried).
             if "refused to answer" in text:
-                raise RefusalError(f"{self.name}: refused to answer: {text[:300]}") from None
+                raise _Refused(_refusal(text, e.code), {"status": e.code, "body": text}) from None
             transient = e.code == HTTPStatus.TOO_MANY_REQUESTS or e.code >= HTTPStatus.INTERNAL_SERVER_ERROR
             error: type[Exception] = TransientError if transient else RuntimeError
             raise error(f"{self.name}: HTTP {e.code}: {text[:300]}") from None
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             raise TransientError(f"{self.name}: {type(e).__name__}: {e}") from e
+
+
+def _refusal(text: str, status: int) -> Refusal:
+    try:
+        error = json.loads(text).get("error", {})
+        message = error.get("message", text) if isinstance(error, dict) else str(error)
+    except ValueError:
+        message = text
+    return Refusal(message=message, status=status)
 
 
 class OpenRouter(HTTP):

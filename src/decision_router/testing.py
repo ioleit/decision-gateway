@@ -17,6 +17,7 @@ import threading
 import time
 
 from .backends import Backend, JSONObject, Reply, Uniform
+from .result import Refusal
 
 
 def choice(*options: str, state: JSONObject | None = None) -> JSONObject:
@@ -28,7 +29,7 @@ def choice(*options: str, state: JSONObject | None = None) -> JSONObject:
 
 
 class Fake(Backend):
-    """Answers like uniform and counts its calls; can be made slow, failing or wrong."""
+    """Answers like uniform and counts its calls; can be made slow, failing, wrong or refusing."""
 
     def __init__(self, name: str, entry: JSONObject | None = None, delay: float = 0.0) -> None:
         super().__init__(name, entry)
@@ -36,6 +37,7 @@ class Fake(Backend):
         self.delay = delay
         self.fail: Exception | None = None  # raised instead of answering
         self.bad = False  # answer another question than the one asked
+        self.refuse = False  # decline to answer
         self._lock = threading.Lock()
 
     def call(self, wire: JSONObject, request: JSONObject) -> Reply:
@@ -45,6 +47,8 @@ class Fake(Backend):
             time.sleep(self.delay)
         if self.fail:
             raise self.fail
+        if self.refuse:
+            return Reply(None, refusal=Refusal(message="Fake refused to answer", status=502))
         if self.bad:
             return Reply({"model": self.name, "answers": {"other": {"type": "noul", "noul": 0.5}}, "usage": {}})
         reply = Uniform(self.name).call(wire, request)

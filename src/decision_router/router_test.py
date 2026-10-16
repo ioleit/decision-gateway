@@ -108,8 +108,9 @@ def test_one_call_for_concurrent_asks_in_one_process(cache: Cache) -> None:
 
 def test_uniform_through_the_router(router: Router, cache: Cache) -> None:
     r = router.ask("uniform", **choice("A", "B", "C"), labels={"task": "demo"})
-    assert r.model == "uniform"
-    assert r.choices["pick"].probabilities["B"] == pytest.approx(1 / 3)
+    assert r.response is not None
+    assert r.response.model == "uniform"
+    assert r.response.choices["pick"].probabilities["B"] == pytest.approx(1 / 3)
     assert router.cached("uniform", **choice("A", "B", "C")) == r
 
 
@@ -131,7 +132,7 @@ def test_a_request_requirement_not_met_sends_nothing(cache: Cache) -> None:
 
 def test_a_response_requirement_not_met_stores_nothing(cache: Cache) -> None:
     other = Fake("m", {"requirements": {"systemone_response_model_id": "m-20261101"}})
-    with pytest.raises(RequirementNotMetError, match="response not stored, served by 'm', not 'm-20261101'"):
+    with pytest.raises(RequirementNotMetError, match="result not stored, served by 'm', not 'm-20261101'"):
         Router({"m": other}, cache).ask("m", **choice("A", "B"), labels={"t": 1})
     assert other.calls == 1
     assert cache.counts() == (0, 0)
@@ -151,5 +152,7 @@ def test_cached_answers_are_served_when_a_request_requirement_no_longer_holds(ca
     assert k is not None
     stored = {"model": "m", "answers": {"pick": {"type": "noul", "noul": 0.9}}, "usage": {}}
     cache.put(Record(key=k, model="m", requirements=late.requirements_spec, request={}, response=stored))
-    assert router.ask("m", **choice("A", "B")).nouls["pick"].noul == 0.9
+    result = router.ask("m", **choice("A", "B"))
+    assert result.response is not None
+    assert result.response.nouls["pick"].noul == 0.9
     assert late.calls == 0

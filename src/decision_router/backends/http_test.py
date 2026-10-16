@@ -8,9 +8,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from decision_router import Cache, Router
+from decision_router import Cache, Refusal, Router
 from decision_router.backends import JSONObject, OpenRouter
-from decision_router.backends.http import HTTP, MissingKeyError, RefusalError, TransientError
+from decision_router.backends.http import HTTP, MissingKeyError, TransientError
 from decision_router.requirements import RequirementNotMetError
 from decision_router.testing import choice
 
@@ -90,7 +90,8 @@ def test_wire_and_provenance(server: Server, jev: OpenRouter, cache: Cache) -> N
     assert sent["auth"] == "Bearer test-key"
     assert sent["body"]["model"] == "typesafe/jev-1.13"
     assert sent["body"]["provider"] == {"only": ["typesafe"], "allow_fallbacks": False}
-    assert r.model == SERVED
+    assert r.response is not None
+    assert r.response.model == SERVED
     row = cache.con.execute("SELECT wire IS NOT NULL, cost, provenance, raw FROM answers").fetchone()
     assert row == (1, 3.1752e-05, '{"generation":"gen-dec-1","provider":"TypeSafe"}', None)
     router.ask("jev", **choice("A", "B"))
@@ -115,12 +116,22 @@ def test_an_answer_from_another_model_is_not_stored(server: Server, jev: OpenRou
     assert cache.counts() == (0, 0)
 
 
-def test_a_refusal_is_an_error_not_retried_not_cached(server: Server, jev: OpenRouter, cache: Cache) -> None:
-    server.replies.append((502, {"error": {"message": 'OpenAI refused to answer question "pick"'}}))
-    with pytest.raises(RefusalError, match="refused to answer"):
-        Router({"jev": jev}, cache).ask("jev", **choice("A", "B"))
-    assert len(server.requests) == 1
-    assert cache.counts() == (0, 0)
+REFUSAL = (502, {"error": {"code": 502, "message": 'OpenAI refused to answer question "pick"'}})
+
+
+def test_a_refusal_is_a_result_cached_and_not_asked_again(server: Server, jev: OpenRouter, cache: Cache) -> None:
+    router = Router({"jev": jev}, cache)
+    server.replies.append(REFUSAL)
+    result = router.ask("jev", **choice("A", "B"))
+    assert result.response is None
+    assert result.router.refusal == Refusal(message='OpenAI refused to answer question "pick"', status=502)
+    assert len(server.requests) == 1  # not retried
+
+    again = router.ask("jev", **choice("A", "B"))
+    assert again == result
+    assert len(server.requests) == 1  # from the cache
+    row = cache.con.execute("SELECT outcome, response, refusal FROM answers").fetchone()
+    assert row == ("refused", None, '{"message":"OpenAI refused to answer question \\"pick\\"","status":502}')
 
 
 def test_transient_errors_are_retried(
@@ -149,7 +160,9 @@ def test_without_a_key_cached_answers_are_still_served(
     router = Router({"jev": jev}, cache)
     router.ask("jev", **choice("A", "B"))
     monkeypatch.delenv("OPENROUTER_API_KEY")
-    assert router.ask("jev", **choice("A", "B")).model == SERVED
+    result = router.ask("jev", **choice("A", "B"))
+    assert result.response is not None
+    assert result.response.model == SERVED
     with pytest.raises(MissingKeyError, match="OPENROUTER_API_KEY"):
         router.ask("jev", **choice("A", "B", "C"))
     assert len(server.requests) == 1

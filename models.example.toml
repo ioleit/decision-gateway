@@ -29,8 +29,12 @@
 # updates without a version jump.
 #
 # A requirement that is not met stops the call with RequirementNotMetError: the question is
-# not sent, or the response is not stored. Answers already in the cache are served as they are.
+# not sent, or the result is not stored. Results already in the cache are served as they are.
 # Changing the requirements starts a new set of answers for the model.
+#
+# Open issue: a refusal (see below) carries no model id and no provider, so the built-in
+# requirements cannot check it and let it pass. A change of model is still caught by the
+# answers around it, unless the new model refuses every question.
 #
 #   systemone_response_model_id = "<id>"
 #       The response's `model` is this id. In the System One API, `model` names the model that
@@ -96,7 +100,10 @@
 # The key is read only when a question is not in the cache, so a machine without it still
 # serves every cached answer.
 #
-# A refusal (the provider declines to answer) raises RefusalError: not retried, not cached.
+# A refusal (the provider declines to answer) is a result like an answer: not retried, cached,
+# and never asked again. The System One API has no way to express it; OpenRouter reports it as
+# an HTTP error ("OpenAI refused to answer question ..."), which the router turns into
+# DecisionResult.router.refusal.
 #
 #
 # ---- backend = "http" ---------------------------------------------------------------------

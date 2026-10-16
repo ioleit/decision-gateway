@@ -13,14 +13,27 @@ import threading
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, NamedTuple, Self
 
 from .key import canonical
 
 DEFAULT_PATH = Path(os.environ.get("DECISION_ROUTER_CACHE", "~/.local/share/decision-router/cache.sqlite")).expanduser()
 
-COLUMNS = ("key", "model", "requirements", "request", "wire", "response", "raw", "asked_at", "cost", "provenance")
-JSON_COLUMNS = {"requirements", "request", "wire", "response", "raw", "provenance"}
+COLUMNS = (
+    "key",
+    "model",
+    "requirements",
+    "request",
+    "wire",
+    "outcome",
+    "response",
+    "refusal",
+    "raw",
+    "asked_at",
+    "cost",
+    "provenance",
+)
+JSON_COLUMNS = {"requirements", "request", "wire", "response", "refusal", "raw", "provenance"}
 
 
 def schema() -> str:
@@ -33,18 +46,28 @@ class Record:
     model: str
     requirements: dict[str, Any]
     request: dict[str, Any]
-    response: dict[str, Any]
+    response: dict[str, Any] | None  # the System One response; None if refused
+    refusal: dict[str, Any] | None = None  # {"message", "status"} if the provider declined
     wire: dict[str, Any] | None = None
     raw: dict[str, Any] | None = None
     asked_at: str | None = None
     cost: float | None = None
     provenance: dict[str, Any] | None = None
 
+    @property
+    def outcome(self) -> str:
+        return "answered" if self.response is not None else "refused"
+
     def row(self) -> Row:
         return tuple(_dump(c, getattr(self, c)) for c in COLUMNS)
 
 
 Row = tuple[str | float | None, ...]  # one answers row, in COLUMNS order
+
+
+class Stored(NamedTuple):
+    response: dict[str, Any] | None  # the System One response, or None if refused
+    refusal: dict[str, Any] | None  # {"message", "status"}, or None if answered
 
 
 def _dump(column: str, value: Any) -> str | float | None:  # noqa: ANN401 (a field of Record)
@@ -81,13 +104,12 @@ class Cache:
                 self._open.append(con)
         return con
 
-    def get(self, key: str) -> dict[str, Any] | None:
-        """The stored response for key, or None."""
-        row = self.con.execute("SELECT response FROM answers WHERE key = ?", (key,)).fetchone()
+    def get(self, key: str) -> Stored | None:
+        """What is stored for key (an answer or a refusal), or None."""
+        row = self.con.execute("SELECT response, refusal FROM answers WHERE key = ?", (key,)).fetchone()
         if row is None:
             return None
-        response: dict[str, Any] = json.loads(row[0])
-        return response
+        return Stored(*(None if v is None else json.loads(v) for v in row))
 
     def put(self, record: Record) -> bool:
         """Store an answer; False if the key already had one (which is kept)."""

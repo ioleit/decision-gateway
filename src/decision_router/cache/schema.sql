@@ -7,11 +7,15 @@ CREATE TABLE IF NOT EXISTS answers (
     requirements TEXT NOT NULL,     -- JSON: the model's requirements when it answered
     request      TEXT NOT NULL,     -- JSON: the request as the caller made it
     wire         TEXT,              -- JSON: what went over the network, if not the request
-    response     TEXT NOT NULL,     -- JSON: the answer, in the router's response format
+    outcome      TEXT NOT NULL CHECK (outcome IN ('answered', 'refused')),
+    response     TEXT,              -- JSON: the System One response as received; NULL if refused
+    refusal      TEXT,              -- JSON: what the provider said ({"message", "status"}); NULL if answered
     raw          TEXT,              -- JSON: the reply as received, if not the response
     asked_at     TEXT,              -- UTC, ISO 8601; NULL if unknown (imported answers)
     cost         REAL,              -- what the call cost, if the backend reports it
-    provenance   TEXT               -- JSON: backend details (generation id, provider, ...)
+    provenance   TEXT,              -- JSON: backend details (generation id, provider, ...)
+    CHECK ((outcome = 'answered') = (response IS NOT NULL)),
+    CHECK ((outcome = 'refused') = (refusal IS NOT NULL))
 );
 
 CREATE INDEX IF NOT EXISTS answers_model ON answers (model);

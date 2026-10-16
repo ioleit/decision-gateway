@@ -13,6 +13,7 @@ def test_every_question_type_gets_a_valid_uniform_answer() -> None:
         "find": Box(instructions="the dog"),
     }
     reply = Uniform("uniform").call({"questions": wire_questions(questions)}, {})
+    assert reply.response is not None
     r = parse_response(reply.response, questions)  # valid per the System One API
 
     assert r.choices["pick"].choice == "A"

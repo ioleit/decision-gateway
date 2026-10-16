@@ -10,6 +10,7 @@ Querying the cache: decision_router.query. Export and preheat: decision_router.c
 from . import models
 from .backends import Backend, Reply
 from .cache import Cache, Record
+from .result import DecisionResult, Refusal, RouterInfo
 from .router import Router
 
-__all__ = ["Backend", "Cache", "Record", "Reply", "Router", "models"]
+__all__ = ["Backend", "Cache", "DecisionResult", "Record", "Refusal", "Reply", "Router", "RouterInfo", "models"]

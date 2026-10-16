@@ -20,13 +20,15 @@ from decision_router.requirements import from_config, spec
 
 if TYPE_CHECKING:
     from decision_router.requirements import Requirement
+    from decision_router.result import Refusal
 
 JSONObject = dict[str, Any]  # a request, a response, a models.toml entry, ...
 
 
 @dataclass
 class Reply:
-    response: JSONObject
+    response: JSONObject | None  # the System One response as received; None if refused
+    refusal: Refusal | None = None  # the provider declined to answer
     raw: JSONObject | None = None  # the reply as received, if it is not the response
     cost: float | None = None
     provenance: JSONObject | None = None  # generation id, provider, ...

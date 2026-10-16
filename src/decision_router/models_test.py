@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from decision_router import models
-from decision_router.backends import JSONObject, Uniform
+from decision_router import DecisionResult, models
+from decision_router.backends import Uniform
 from decision_router.requirements import Asking, ResponseRequirement
 
 
@@ -33,7 +33,7 @@ class ServesWeights(ResponseRequirement):
     def __init__(self, weights: str) -> None:
         self.weights = weights
 
-    def check(self, asking: Asking, response: JSONObject) -> str | None:  # noqa: ARG002
+    def check(self, asking: Asking, result: DecisionResult) -> str | None:  # noqa: ARG002
         return None
 
 

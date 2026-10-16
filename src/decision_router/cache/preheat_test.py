@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from decision_router import Cache, Router
+from decision_router import Cache, Router, query
 from decision_router.cache.export import export
 from decision_router.cache.preheat import preheat
 from decision_router.testing import Fake, choice
@@ -40,3 +40,21 @@ def test_roundtrip(tmp_path: Path, router: Router, cache: Cache, fake: Fake, req
 
     # preheating again adds nothing
     assert preheat(tmp_path / "exp", fresh) == (0, 0)
+
+
+def test_refusals_roundtrip(tmp_path: Path, cache: Cache) -> None:
+    refusing = Fake("fake")
+    refusing.refuse = True
+    first = Router({"fake": refusing}, cache).ask("fake", **choice("A", "B"), labels={"study": "demo"})
+    assert first.router.refusal is not None
+    assert export(cache.path, tmp_path / "exp") == (1, 1)
+
+    with Cache(tmp_path / "fresh.sqlite") as fresh:
+        assert preheat(tmp_path / "exp", fresh) == (1, 1)
+        cold = Fake("fake")
+        served = Router({"fake": cold}, fresh).ask("fake", **choice("A", "B"))
+        assert served == first
+        assert cold.calls == 0
+        assert query.connect(fresh.path).sql("SELECT outcome, count(*) FROM answers GROUP BY ALL").fetchall() == [
+            ("refused", 1)
+        ]

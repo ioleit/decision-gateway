@@ -45,13 +45,16 @@ router = Router(models.load("models.toml"), Cache())
 state = "I was charged twice for my subscription."
 questions = {"refund": Noul(instructions="Is the customer asking for money back?")}
 
-response = router.ask("jev", state=state, questions=questions, labels={"study": "demo"})
-response.nouls["refund"].noul  # a typesafe_sdk SystemOneResponse
+result = router.ask("jev", state=state, questions=questions, labels={"study": "demo"})
+result.response.nouls["refund"].noul  # a typesafe_sdk SystemOneResponse, or None if refused
+result.router.refusal  # what the provider said, if it declined to answer
 router.cached("jev", state=state, questions=questions)  # the same, without asking
 ```
 
 Questions are the SDK's question objects (`Noul`, `Choice`, `Score`, `Box`) or the matching
-dictionaries. Images in requests are not supported yet.
+dictionaries. `ask()` returns a `DecisionResult`: the SDK's response, or a refusal, which the
+System One API has no way to express but which is a result all the same, cached like an answer.
+Images in requests are not supported yet.
 
 `models.toml` says which models there are, how each is reached, and when its answers may be
 cached. [`models.example.toml`](models.example.toml) describes every field, with examples;
@@ -86,6 +89,13 @@ changing them starts a new set of answers (see `models.example.toml`).
 
 The format is frozen by golden hashes (`src/decision_router/cache/key_test.py`), so an
 export preheats any cache to the same hits.
+
+## Open issues
+
+- **Refusals can't be checked by requirements.** A refusal carries no model id and no
+  provider, so `systemone_response_model_id` and `openrouter_response_provider` let it pass.
+  A change of model is still caught by the answers around it, unless the new model refuses
+  every question.
 
 ## Layout
 

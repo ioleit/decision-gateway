@@ -11,14 +11,20 @@ In models.toml, a model's requirements are a table of name = value:
     "my_checks:SameQuantization" = { quantization = "bf16" }
 
 A name is one of the built-ins below, or "module:Class" for your own: a subclass of
-RequestRequirement (checked before a question is sent) or ResponseRequirement (checked before
-an answer is stored). It is built from the value: a table becomes keyword arguments, anything
-else one argument. check() returns None if the requirement is met, or the reason it is not.
+RequestRequirement (checked before a question is sent) or ResponseRequirement (checked on the
+result, an answer or a refusal, before it is stored). It is built from the value: a table
+becomes keyword arguments, anything else one argument. check() returns None if the requirement
+is met, or the reason it is not.
 
 A requirement that is not met stops the call: nothing is sent, or nothing is stored, and
 RequirementNotMetError says why. Answers already in the cache are served as they are.
 
 The requirements are part of the cache key: changing them starts a new set of answers.
+
+Open issue: a refusal carries no model id and no provider (OpenRouter's refusal is an HTTP
+error with a message only), so the built-in response requirements cannot check it and let it
+pass. A change of model is still caught by the answers around it, unless the new model refuses
+every question.
 """
 
 from __future__ import annotations
@@ -33,6 +39,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from .backends.base import JSONObject
+    from .result import DecisionResult
 
 
 class RequirementNotMetError(Exception):
@@ -57,11 +64,12 @@ class RequestRequirement(ABC):
 
 
 class ResponseRequirement(ABC):
-    """Checked before an answer is stored."""
+    """Checked on a result (an answer or a refusal) before it is stored."""
 
     @abstractmethod
-    def check(self, asking: Asking, response: JSONObject) -> str | None:
-        """None if the response may be stored, else why not."""
+    def check(self, asking: Asking, result: DecisionResult) -> str | None:
+        """None if the result may be stored, else why not. result.router.response_json is the
+        response exactly as received, with fields the SDK's types leave out."""
 
 
 Requirement = RequestRequirement | ResponseRequirement
@@ -78,7 +86,10 @@ class SystemOneResponseModelId(ResponseRequirement):
     def __init__(self, model_id: str) -> None:
         self.model_id = model_id
 
-    def check(self, asking: Asking, response: JSONObject) -> str | None:  # noqa: ARG002 (only the response matters)
+    def check(self, asking: Asking, result: DecisionResult) -> str | None:  # noqa: ARG002 (only the result matters)
+        response = result.router.response_json
+        if response is None:
+            return None  # a refusal names no model; see "Open issue" above
         served = response.get("model")
         return None if served == self.model_id else f"served by {served!r}, not {self.model_id!r}"
 
@@ -89,7 +100,10 @@ class OpenRouterResponseProvider(ResponseRequirement):
     def __init__(self, provider: str) -> None:
         self.provider = provider
 
-    def check(self, asking: Asking, response: JSONObject) -> str | None:  # noqa: ARG002 (only the response matters)
+    def check(self, asking: Asking, result: DecisionResult) -> str | None:  # noqa: ARG002 (only the result matters)
+        response = result.router.response_json
+        if response is None:
+            return None  # a refusal names no provider; see "Open issue" above
         provider = response.get("provider")
         return None if provider == self.provider else f"served by provider {provider!r}, not {self.provider!r}"
 
@@ -138,10 +152,10 @@ def check_request(model: str, requirements: Sequence[Requirement], asking: Askin
             raise RequirementNotMetError(f"{model}: not sent, {reason} ({type(r).__name__})")
 
 
-def check_response(model: str, requirements: Sequence[Requirement], asking: Asking, response: JSONObject) -> None:
+def check_response(model: str, requirements: Sequence[Requirement], asking: Asking, result: DecisionResult) -> None:
     for r in requirements:
-        if isinstance(r, ResponseRequirement) and (reason := r.check(asking, response)) is not None:
-            raise RequirementNotMetError(f"{model}: response not stored, {reason} ({type(r).__name__})")
+        if isinstance(r, ResponseRequirement) and (reason := r.check(asking, result)) is not None:
+            raise RequirementNotMetError(f"{model}: result not stored, {reason} ({type(r).__name__})")
 
 
 def _import(target: str) -> Callable[..., Requirement]:
