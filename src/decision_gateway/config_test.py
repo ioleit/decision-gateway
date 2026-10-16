@@ -66,20 +66,24 @@ def test_every_template_in_the_example_loads(monkeypatch: pytest.MonkeyPatch) ->
         in_template = starts or (in_template and re.match(r"# \w+ = ", line) is not None)
         lines.append(line.removeprefix("# ") if in_template else line)
     ms = config.from_config(tomllib.loads("\n".join(lines)))
-    assert set(ms) == {
-        "uniform", "jev", "jev-typesafe", "decider-2026-10-16", "decider-any-provider", "decider-4b", "jev-cheap",
-        "uniform-uncached",
-    }  # fmt: skip
+    openrouter = {"jev", "pplx-decider", "microsoft-decision-1", "liquid-d1", "openai-decisions", "clef", "clef-flash"}
+    templates = {"clef-2026-10-16", "clef-any-provider", "jev-typesafe", "decider-4b", "jev-cheap", "uniform-uncached"}
+    assert set(ms) == {"uniform"} | openrouter | templates
+    for name in openrouter:
+        m = ms[name]
+        assert (m.backend, m.base_url, m.key_env) == ("openrouter", "https://openrouter.ai/api", "OPENROUTER_API_KEY")
+        assert m.extra_body["provider"]["allow_fallbacks"] is False
+        assert "OpenRouterResponseProvider" in [r.name for r in m.requirements]
     jev = ms["jev"]
     assert (jev.display_name, jev.model, jev.base_url) == (
-        "Jev 1.13 (2026-09-17)",
+        "TypeSafe Jev 1.13",
         "typesafe/jev-1.13",
         "https://openrouter.ai/api",
     )
     assert jev.extra_body == {"provider": {"only": ["typesafe"], "allow_fallbacks": False}}
     assert [type(r).__name__ for r in jev.requirements] == ["SystemOneResponseModelId", "OpenRouterResponseProvider"]
-    assert [type(r).__name__ for r in ms["decider-2026-10-16"].requirements] == ["RequestDateRange"]
+    assert [r.name for r in ms["clef-2026-10-16"].requirements] == ["OpenRouterResponseProvider", "RequestDateRange"]
     assert [r.name for r in ms["jev-cheap"].requirements] == ["max_cost"]
     assert ms["decider-4b"].base_url == "http://localhost:8000"
-    assert not ms["decider-any-provider"].cache
+    assert not ms["clef-any-provider"].cache
     assert not ms["uniform-uncached"].cache

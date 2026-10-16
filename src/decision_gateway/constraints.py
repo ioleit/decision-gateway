@@ -1,6 +1,6 @@
 """Constraints: conditions on observations, and the helpers to build and check them.
 
-A model's requirements (ModelConfig.requirements, from its [models.<name>.requirements] table)
+A model's requirements (ModelConfig.requirements, from its `requirements` table in models.toml)
 are a list of constraints. They decide which observations (store/) count as that model's
 answers: when a request is looked up, and when a new response arrives. Used to prevent
 different models served by the same backend configuration from sharing answers, for example
@@ -9,12 +9,10 @@ minor updates without a version jump.
 A response that violates a constraint stays recorded, and the call raises
 ConstraintViolatedError. A constraint can also stop a request before it is sent.
 
-In models.toml, a model's requirements are a table of name = value:
+In models.toml, a model's requirements are an inline table of name = value:
 
-    [models.jev.requirements]
-    systemone_response_model_id = "typesafe/jev-1.13-20260917"
-    openrouter_response_provider = "TypeSafe"
-    "my_checks:max_cost" = { at_most = 0.001 }
+    [models.jev]
+    requirements = { openrouter_response_provider = "TypeSafe", "my_checks:max_cost" = { at_most = 0.001 } }
 
 A name is one of the built-ins below, or "module:name" for your own:
 
