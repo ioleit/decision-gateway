@@ -1,4 +1,7 @@
-"""The baseline: equal probability for every option of every question. No network, no cost.
+"""The uniform baseline: a local System One server that gives every option equal probability.
+
+It is an HTTP transport for the SDK, so a uniform model goes through exactly the same client,
+cache and checks as a real one, without a network or a key:
 
     noul    noul = 0.5
     choice  every option 1/n; the first option, confidence 1/n
@@ -10,19 +13,13 @@ Its answers are valid System One answers, so it stands in for any model in tests
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from .base import Backend, JSONObject, Reply
+import httpx2
 
 
-class Uniform(Backend):
-    def call(self, wire: JSONObject, request: JSONObject) -> Reply:
-        answers = {name: _answer(q) for name, q in wire["questions"].items()}
-        usage = {"input_tokens": 0, "output_tokens": 0}
-        return Reply({"model": self.name, "answers": answers, "usage": usage}, cost=0.0)
-
-
-def _answer(question: JSONObject) -> dict[str, Any]:
+def answer(question: dict[str, Any]) -> dict[str, Any]:
     kind = question["type"]
     if kind == "noul":
         return {"type": "noul", "noul": 0.5}
@@ -43,3 +40,14 @@ def _answer(question: JSONObject) -> dict[str, Any]:
     if kind == "box":
         return {"type": "box", "box": {"top": 0.0, "bottom": 1.0, "left": 0.0, "right": 1.0}, "confidence": None}
     raise ValueError(f"uniform: unknown question type {kind!r}")
+
+
+def respond(body: dict[str, Any], model: str = "uniform") -> dict[str, Any]:
+    """The uniform response to a System One request body."""
+    answers = {name: answer(q) for name, q in body["questions"].items()}
+    return {"model": model, "answers": answers, "usage": {"input_tokens": 0, "output_tokens": 0}}
+
+
+def transport() -> httpx2.MockTransport:
+    """An httpx2 transport that answers every System One request uniformly."""
+    return httpx2.MockTransport(lambda request: httpx2.Response(200, json=respond(json.loads(request.content))))

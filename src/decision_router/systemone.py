@@ -1,12 +1,6 @@
-"""The System One API as the router uses it, with the types of TypeSafe's SDK (typesafe-sdk).
+"""The System One API as the router uses it: TypeSafe's SDK (typesafe-sdk) and its types.
 
-Spec: https://docs.typesafe.ai/api (OpenAPI: https://api.typesafe.ai/openapi.json). Questions
-are the SDK's question objects (Noul, Choice, Score, Box) or the matching dictionaries;
-responses are the SDK's SystemOneResponse.
-
-The cache keeps requests and responses as JSON exactly as they went over the network, so
-fields a server adds beyond the spec (OpenRouter's `provider`, `id`, `usage.cost`) are kept,
-although SystemOneResponse leaves them out.
+Spec: https://docs.typesafe.ai/api (OpenAPI: https://api.typesafe.ai/openapi.json).
 """
 
 from __future__ import annotations
@@ -14,7 +8,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from typesafe_sdk import Box, Choice, Noul, Score, SystemOneResponse
 
 if TYPE_CHECKING:
@@ -22,9 +16,16 @@ if TYPE_CHECKING:
 
     from typesafe_sdk import Question
 
-    JSONObject = dict[str, Any]
+JSONObject = dict[str, Any]
 
 QUESTION_TYPES: dict[str, type[BaseModel]] = {"noul": Noul, "choice": Choice, "score": Score, "box": Box}
+
+
+class RoutedResponse(SystemOneResponse):
+    """SystemOneResponse that keeps fields a server adds beyond the spec, such as OpenRouter's
+    `provider` and `id` (in model_extra)."""
+
+    model_config = ConfigDict(extra="allow")
 
 
 class InvalidRequestError(ValueError):
@@ -32,11 +33,15 @@ class InvalidRequestError(ValueError):
 
 
 class InvalidResponseError(ValueError):
-    """A response that is not a System One response to the questions asked; not cached."""
+    """A response that does not answer the questions asked; not cached."""
+
+
+class NotCacheableError(ValueError):
+    """A request the cache cannot key yet: assets (images) in it."""
 
 
 def wire_questions(questions: Mapping[str, Question]) -> JSONObject:
-    """Questions as JSON for the request body, each validated by its SDK class."""
+    """Questions as JSON, as the SDK sends them, each validated by its SDK class."""
     if not questions:
         raise InvalidRequestError("at least one question is required")
     out: JSONObject = {}
@@ -56,6 +61,29 @@ def wire_questions(questions: Mapping[str, Question]) -> JSONObject:
     return out
 
 
+def request_body(
+    state: object,
+    questions: Mapping[str, Question],
+    model: str,
+    extra_body: Mapping[str, object] | None,
+) -> JSONObject:
+    """The JSON body the SDK sends for a request without assets: state, model, questions, then
+    extra_body merged over them. NotCacheableError if the state holds assets."""
+    body: JSONObject = {"state": state, "model": model, "questions": wire_questions(questions), **(extra_body or {})}
+    try:
+        json.dumps(body)
+    except TypeError:
+        raise NotCacheableError("the request holds assets (images), which the cache does not key yet") from None
+    return body
+
+
+def check_answers(response: SystemOneResponse, questions: Mapping[str, object]) -> None:
+    if set(response.answers) != set(questions):
+        raise InvalidResponseError(
+            f"answers {sorted(response.answers)} do not match the questions asked {sorted(questions)}"
+        )
+
+
 def _check_question(name: str, q: JSONObject) -> None:
     """What the SDK checks beyond its types before sending (typesafe_sdk/_core/questions.py)."""
     if q["type"] in ("choice", "score") and not q.get("criteria"):
@@ -64,16 +92,3 @@ def _check_question(name: str, q: JSONObject) -> None:
         criteria = q.get("criteria") or {}
         if not any(v is not None for v in criteria.values()):
             raise InvalidRequestError(f"noul question {name!r} has neither instructions nor criteria")
-
-
-def parse_response(raw: JSONObject, questions: Mapping[str, object]) -> SystemOneResponse:
-    """raw as the SDK's SystemOneResponse, if it is a valid response with one answer per question."""
-    try:
-        response = SystemOneResponse.model_validate_json(json.dumps(raw))
-    except ValidationError as e:
-        raise InvalidResponseError(f"not a System One response: {e}") from None
-    if set(response.answers) != set(questions):
-        raise InvalidResponseError(
-            f"answers {sorted(response.answers)} do not match the questions asked {sorted(questions)}"
-        )
-    return response

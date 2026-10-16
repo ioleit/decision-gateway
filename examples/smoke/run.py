@@ -64,7 +64,7 @@ def walk_through(model: str, cache: Cache, cache_path: Path) -> int:
     # 1. Ask questions 1-5. Each is asked once; a second run against the same cache asks nothing.
     before = cache.counts()[0]
     for q in LIVE:
-        r.ask(model, **request(q), labels=labels(q, "live"))
+        r.system_one(**request(q), model=model, labels=labels(q, "live"))
     print(f"1. asked {model} {cache.counts()[0] - before} new question(s) of {len(LIVE)}")
     show(cache_path, "after asking questions 1-5")
 
@@ -78,9 +78,9 @@ def walk_through(model: str, cache: Cache, cache_path: Path) -> int:
 
     # 3. All 10 again: every one is a cache hit, so the model is not asked at all.
     before = cache.counts()[0]
-    missing = [q["id"] for q in QUESTIONS if r.cached(model, **request(q)) is None]
+    missing = [q["id"] for q in QUESTIONS if r.cached(**request(q), model=model) is None]
     for q in QUESTIONS:
-        r.ask(model, **request(q))
+        r.system_one(**request(q), model=model)
     asked = cache.counts()[0] - before
     print(
         f"\n3. all {len(QUESTIONS)} again: {asked} new question(s) asked; not in the cache before: {missing or 'none'}"

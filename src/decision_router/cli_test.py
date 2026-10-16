@@ -9,7 +9,7 @@ from decision_router.testing import choice
 
 def test_query_export_preheat(tmp_path: Path, router: Router, cache: Cache, capsys: pytest.CaptureFixture[str]) -> None:
     for n in (2, 3):
-        router.ask("uniform", **choice(*"ABC"[:n]))
+        router.system_one(**choice(*"ABC"[:n]), model="uniform")
     db = str(cache.path)
 
     assert main(["--cache", db, "query", "--csv", "SELECT model, count(*) AS n FROM answers GROUP BY model"]) == 0

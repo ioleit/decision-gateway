@@ -2,7 +2,6 @@ import multiprocessing as mp
 from pathlib import Path
 
 from decision_router import Cache, Record
-from decision_router.cache import Stored
 
 
 def rec(k: str, answer: str = "A") -> Record:
@@ -12,7 +11,7 @@ def rec(k: str, answer: str = "A") -> Record:
 def test_first_answer_stays(cache: Cache) -> None:
     assert cache.put(rec("k", "A"))
     assert not cache.put(rec("k", "B"))
-    assert cache.get("k") == Stored(response={"answers": {"q": "A"}}, refusal=None)
+    assert cache.get("k") == {"answers": {"q": "A"}}
     assert cache.get("missing") is None
 
 

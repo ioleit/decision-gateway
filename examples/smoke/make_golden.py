@@ -23,7 +23,7 @@ args = p.parse_args()
 with tempfile.TemporaryDirectory() as tmp, Cache(Path(tmp) / "cache.sqlite") as cache:
     r = router(cache)
     for q in GOLDEN:
-        r.ask(args.model, **request(q), labels=labels(q, "golden"))
+        r.system_one(**request(q), model=args.model, labels=labels(q, "golden"))
     out = HERE / "golden" / args.model
     staging = Path(tmp) / "golden"
     n = export(cache.path, staging)  # the old set stays in place if this fails

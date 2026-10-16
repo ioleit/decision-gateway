@@ -2,20 +2,14 @@
 -- JSON columns hold canonical JSON text (sorted keys).
 
 CREATE TABLE IF NOT EXISTS answers (
-    key          TEXT PRIMARY KEY,  -- cache/key.py: sha256 of [model, requirements, wire]
+    key          TEXT PRIMARY KEY,  -- cache/key.py: sha256 of [model, requirements, request]
     model        TEXT NOT NULL,     -- the name in models.toml
     requirements TEXT NOT NULL,     -- JSON: the model's requirements when it answered
-    request      TEXT NOT NULL,     -- JSON: the request as the caller made it
-    wire         TEXT,              -- JSON: what went over the network, if not the request
-    outcome      TEXT NOT NULL CHECK (outcome IN ('answered', 'refused')),
-    response     TEXT,              -- JSON: the System One response as received; NULL if refused
-    refusal      TEXT,              -- JSON: what the provider said ({"message", "status"}); NULL if answered
-    raw          TEXT,              -- JSON: the reply as received, if not the response
+    request      TEXT NOT NULL,     -- JSON: the System One request body as sent
+    response     TEXT NOT NULL,     -- JSON: the System One response exactly as received
     asked_at     TEXT,              -- UTC, ISO 8601; NULL if unknown (imported answers)
-    cost         REAL,              -- what the call cost, if the backend reports it
-    provenance   TEXT,              -- JSON: backend details (generation id, provider, ...)
-    CHECK ((outcome = 'answered') = (response IS NOT NULL)),
-    CHECK ((outcome = 'refused') = (refusal IS NOT NULL))
+    cost         REAL,              -- what the call cost, if the server reports it (usage.cost)
+    provenance   TEXT               -- JSON: what else the server reported (OpenRouter: id, provider)
 );
 
 CREATE INDEX IF NOT EXISTS answers_model ON answers (model);

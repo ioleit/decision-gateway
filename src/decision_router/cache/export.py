@@ -56,7 +56,7 @@ def push(out: str | Path, repo_id: str, *, private: bool = True, revision: str |
     """Upload an export directory to a Hugging Face dataset repo. Returns the commit URL.
 
     private=True (the default): a missing dataset is created private, and an existing public
-    dataset is refused (PublicDatasetError) rather than published to. private=False: a missing
+    dataset is rejected (PublicDatasetError) rather than published to. private=False: a missing
     dataset is created public. An existing dataset's visibility is never changed."""
     try:
         from huggingface_hub import HfApi

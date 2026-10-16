@@ -5,9 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from decision_router import Cache, Router
-from decision_router.backends import Uniform
-from decision_router.testing import Fake
+from decision_router import Cache, Model, Router
+from decision_router.testing import FakeServer
 
 
 @pytest.fixture
@@ -18,10 +17,11 @@ def cache(tmp_path: Path) -> Iterator[Cache]:
 
 
 @pytest.fixture
-def fake() -> Fake:
-    return Fake("fake")
+def server() -> FakeServer:
+    return FakeServer()
 
 
 @pytest.fixture
-def router(cache: Cache, fake: Fake) -> Router:
-    return Router({"fake": fake, "uniform": Uniform("uniform")}, cache)
+def router(cache: Cache, server: FakeServer) -> Iterator[Router]:
+    with Router({"fake": server.model("fake"), "uniform": Model(name="uniform", backend="uniform")}, cache) as r:
+        yield r

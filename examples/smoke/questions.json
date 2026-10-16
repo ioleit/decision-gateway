@@ -6,7 +6,7 @@
   {"id": 5,  "case": "A restaurant review site shows 4.8 stars from 2,300 reviews; the restaurant is 10 minutes away.", "question": "Is it a good choice for dinner tonight?"},
   {"id": 6,  "case": "An email from 'your bank' asks to confirm the account password through a link.", "question": "Should the link be clicked?"},
   {"id": 7,  "case": "It is forecast to rain from 14:00; the walk takes two hours and starts at 11:00.", "question": "Should an umbrella be packed?"},
-  {"id": 8,  "case": "A used car costs 20% below market price and the seller refuses an inspection.", "question": "Should it be bought?"},
+  {"id": 8,  "case": "A used car costs 20% below market price and the seller will not allow an inspection.", "question": "Should it be bought?"},
   {"id": 9,  "case": "A houseplant's leaves are yellow and the soil is wet three days after watering.", "question": "Should it be watered more?"},
   {"id": 10, "case": "A new open-source library has 40 stars, one maintainer and no release in 18 months.", "question": "Should a company build its product on it?"}
 ]

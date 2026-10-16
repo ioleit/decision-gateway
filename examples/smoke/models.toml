@@ -1,5 +1,4 @@
-# The models the smoke example can use. uniform needs nothing; jev needs OPENROUTER_API_KEY
-# (and golden/ answers made with jev, see make_golden.py).
+# The models the smoke example can use. uniform needs nothing; jev needs OPENROUTER_API_KEY.
 
 [models.uniform]
 backend = "uniform"
@@ -8,8 +7,8 @@ backend = "uniform"
 [models.jev]
 backend = "openrouter"
 model = "typesafe/jev-1.13"
-provider = { only = ["typesafe"], allow_fallbacks = false }
 display_name = "Jev 1.13 (2026-09-17)"
+extra_body = { provider = { only = ["typesafe"], allow_fallbacks = false } }
 
 [models.jev.requirements]
 systemone_response_model_id = "typesafe/jev-1.13-20260917"

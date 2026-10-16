@@ -1,16 +1,17 @@
-"""Ask decision models through one router, with a cache that never asks twice.
+"""A drop-in replacement for TypeSafe's SDK client that routes by model name and caches.
 
     from decision_router import Cache, Router, models
-    router = Router(models.load("models.toml"), Cache())
-    router.ask("uniform", {"state": {...}, "questions": {"q": {"type": "choice", "criteria": {...}}}})
+
+    client = Router(models.load("models.toml"), Cache())
+    response = client.system_one(state=..., questions={...}, model="jev")
 
 Querying the cache: decision_router.query. Export and preheat: decision_router.cache.
 """
 
 from . import models
-from .backends import Backend, Reply
 from .cache import Cache, Record
-from .result import DecisionResult, Refusal, RouterInfo
-from .router import Router
+from .models import Model
+from .router import AsyncRouter, Router
+from .systemone import RoutedResponse
 
-__all__ = ["Backend", "Cache", "DecisionResult", "Record", "Refusal", "Reply", "Router", "RouterInfo", "models"]
+__all__ = ["AsyncRouter", "Cache", "Model", "Record", "RoutedResponse", "Router", "models"]

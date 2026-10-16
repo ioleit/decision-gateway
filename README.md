@@ -1,22 +1,23 @@
 # decision-router
 
-A router for System One decision models such as Jev, with a cache that never asks the same
-question twice. It speaks TypeSafe's [System One API](https://docs.typesafe.ai/api) and uses
-the types of TypeSafe's SDK ([`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/)) for
-questions and answers.
+A drop-in replacement for TypeSafe's SDK client ([`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/))
+for System One decision models such as Jev. It routes each request by model name to a
+configured SDK client, and caches the answers, so the same question is never asked twice.
 
-Status: early. Backends: `uniform` (a no-network baseline that gives every option equal
-probability), `openrouter` and `http` (any endpoint that takes a System One request). The HTTP
-backends are tested against a local server; `examples/smoke` walks through asking, querying
-and preheating, with uniform or live with Jev through OpenRouter.
+Status: early. Models are reached through TypeSafe's API, OpenRouter, any System One server,
+or `uniform`, a local baseline that gives every option equal probability. `examples/smoke`
+walks through asking, querying and preheating, with uniform or live with Jev through
+OpenRouter.
 
 ## Parts
 
-- **Router**: `Router.ask(model, state=..., questions=..., labels=...)` answers from the
-  cache, or asks the model's backend and caches the answer. Every response is checked
-  against the System One API before it is cached.
+- **Router**: `Router.system_one(...)` takes the same arguments as `TypeSafeClient.system_one`
+  and returns the same response. `model` is a name in `models.toml`, which says how the SDK
+  client for it is configured. `AsyncRouter` does the same for `AsyncTypeSafeClient`.
 - **Cache**: one SQLite file (WAL), shared by every process on a machine. An answer is keyed
-  by the model's name, its requirements and the request exactly as sent, and is final.
+  by the model's name, its requirements and the request body as sent, and is final.
+- **Requirements**: reject responses that don't come from the model a name stands for (see
+  `models.example.toml`).
 - **Labels**: what a question is about, in the caller's terms: any JSON object, several per
   answer. Never part of the key and never used to find an answer; only for queries.
 - **Query** (`decision_router.query`): read-only SQL with DuckDB over the cache or an export,
@@ -28,7 +29,7 @@ and preheating, with uniform or live with Jev through OpenRouter.
 ## Install
 
 ```bash
-pip install -e .            # router and cache only, no dependencies
+pip install -e .            # router and cache; brings typesafe-sdk (pydantic, httpx2, ...)
 pip install -e '.[query]'   # + DuckDB, for query and export
 pip install -e '.[hub]'     # + huggingface_hub, for push and hf:// preheat
 pip install -e '.[dev]'     # + pytest, build, ruff, mypy (and DuckDB, huggingface_hub)
@@ -36,29 +37,37 @@ pip install -e '.[dev]'     # + pytest, build, ruff, mypy (and DuckDB, huggingfa
 
 ## Use
 
+Where code uses the SDK's client:
+
 ```python
-from typesafe_sdk import Noul
+from typesafe_sdk import Noul, TypeSafeClient
 
-from decision_router import Cache, Router, models
-
-router = Router(models.load("models.toml"), Cache())
 state = "I was charged twice for my subscription."
 questions = {"refund": Noul(instructions="Is the customer asking for money back?")}
 
-result = router.ask("jev", state=state, questions=questions, labels={"study": "demo"})
-result.response.nouls["refund"].noul  # a typesafe_sdk SystemOneResponse, or None if refused
-result.router.refusal  # what the provider said, if it declined to answer
-router.cached("jev", state=state, questions=questions)  # the same, without asking
+client = TypeSafeClient(model="jev-1.13")
+response = client.system_one(state=state, questions=questions)
 ```
 
-Questions are the SDK's question objects (`Noul`, `Choice`, `Score`, `Box`) or the matching
-dictionaries. `ask()` returns a `DecisionResult`: the SDK's response, or a refusal, which the
-System One API has no way to express but which is a result all the same, cached like an answer.
-Images in requests are not supported yet.
+the router takes its place:
 
-`models.toml` says which models there are, how each is reached, and when its answers may be
-cached. [`models.example.toml`](models.example.toml) describes every field, with examples;
-copy it to start.
+```python
+from decision_router import Cache, Router, models
+
+client = Router(models.load("models.toml"), Cache(), default_model="jev")
+response = client.system_one(state=state, questions=questions)
+response.nouls["refund"].noul  # the SDK's SystemOneResponse (a subclass of it)
+
+client.system_one(state=state, questions=questions, model="uniform", labels={"study": "demo"})
+client.cached(state=state, questions=questions)  # from the cache only; None if not there
+```
+
+Fields a server adds beyond the System One API, such as OpenRouter's `provider`, are kept in
+`response.model_extra`. Requests with assets (images) are sent but not cached yet.
+
+`models.toml` says which models there are and how each is reached.
+[`models.example.toml`](models.example.toml) describes every field, with examples; copy it to
+start.
 
 ```python
 from decision_router import query
@@ -81,33 +90,28 @@ first use.
 
 ## The cache key
 
-`sha256(json.dumps([model, requirements, wire], sort_keys=True, ensure_ascii=False))`:
-the model's name in `models.toml`, its `requirements` table as written, and the request as it
-goes over the network. The name is the model's identity: a different model gets a different
-name. Requirements reject responses that don't come from the model the name stands for, and
-changing them starts a new set of answers (see `models.example.toml`).
+`sha256(json.dumps([model, requirements, request], sort_keys=True, ensure_ascii=False))`:
+the model's name in `models.toml`, its `requirements` table as written, and the request body as
+the SDK sends it. The name stands for one configuration (model id, provider pin and
+requirements): answers are shared by every project that uses the same name for the same
+configuration, and renaming an entry starts a new set of answers.
 
 The format is frozen by golden hashes (`src/decision_router/cache/key_test.py`), so an
 export preheats any cache to the same hits.
-
-## Open issues
-
-- **Refusals can't be checked by requirements.** A refusal carries no model id and no
-  provider, so `systemone_response_model_id` and `openrouter_response_provider` let it pass.
-  A change of model is still caught by the answers around it, unless the new model refuses
-  every question.
 
 ## Layout
 
 ```
 src/decision_router/
-  router.py          cache lookup, backend call on a miss, store
-  models.py          models.toml -> backends
-  backends/          base.py (the Backend interface), uniform.py, http.py (http, openrouter)
+  router.py          Router and AsyncRouter: system_one routed by name, cached
+  models.py          models.toml -> configured TypeSafe SDK clients
+  systemone.py       the request body as sent, the response type, checks
+  requirements.py    built-in requirements and the base classes for your own
+  uniform.py         the uniform baseline, as a local transport for the SDK
   cache/             key.py, schema.sql, sqlite.py, export.py, preheat.py
   query.py           DuckDB over a cache file or an export
   cli.py             decision-router query | export | preheat
-  testing.py         Fake backend and request helpers, for tests of code that uses the router
+  testing.py         FakeServer (a transport for the SDK) and request helpers, for tests
 tests/               tests that span the package: the built wheel, the examples
 examples/smoke/      ten yes/no questions: ask 5, query, preheat 5 from golden/, ask all again
 ```

@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument(
         "--public",
         action="store_true",
-        help="allow a public dataset: create it public, or push to an existing public one (default: refuse)",
+        help="allow a public dataset: create it public, or push to an existing public one (default: reject)",
     )
 
     h = sub.add_parser("preheat", help="load an export (directory or hf://owner/name) into the cache")

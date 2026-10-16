@@ -1,11 +1,18 @@
-import json
 from pathlib import Path
 
 import duckdb
 import pytest
 from typesafe_sdk import Choice, Noul, Question
 
-from decision_router.systemone import InvalidRequestError, InvalidResponseError, parse_response, wire_questions
+from decision_router.systemone import (
+    InvalidRequestError,
+    InvalidResponseError,
+    NotCacheableError,
+    RoutedResponse,
+    check_answers,
+    request_body,
+    wire_questions,
+)
 
 GOLDEN_JEV = Path(__file__).parents[2] / "examples/smoke/golden/jev/answers.parquet"
 
@@ -39,17 +46,30 @@ def test_real_jev_responses_are_valid() -> None:
     rows = duckdb.sql(f"SELECT CAST(response AS VARCHAR) FROM read_parquet('{GOLDEN_JEV}')").fetchall()
     assert len(rows) == 5
     for (raw,) in rows:
-        response = json.loads(raw)
-        parsed = parse_response(response, response["answers"])
-        assert parsed.model == "typesafe/jev-1.13-20260917"
-        assert "provider" in response  # OpenRouter's extra field: kept in the cache, not in the parsed response
+        response = RoutedResponse.model_validate_json(raw)
+        assert response.model == "typesafe/jev-1.13-20260917"
+        assert response.model_extra is not None
+        assert response.model_extra["provider"] == "TypeSafe"  # beyond the System One API, kept
 
 
-def test_invalid_responses() -> None:
-    noul = {"type": "noul", "noul": 0.5}
-    with pytest.raises(InvalidResponseError, match="usage"):
-        parse_response({"model": "m", "answers": {"q": noul}}, {"q": None})
-    with pytest.raises(InvalidResponseError, match="noul"):
-        parse_response({"model": "m", "answers": {"q": {"type": "noul"}}, "usage": {}}, {"q": None})
+def test_answers_must_match_the_questions() -> None:
+    response = RoutedResponse.model_validate(
+        {"model": "m", "answers": {"other": {"type": "noul", "noul": 0.5}}, "usage": {}}
+    )
     with pytest.raises(InvalidResponseError, match="do not match the questions asked"):
-        parse_response({"model": "m", "answers": {"other": noul}, "usage": {}}, {"q": None})
+        check_answers(response, {"q": None})
+
+
+def test_request_body_is_what_the_sdk_sends() -> None:
+    body = request_body("s", {"q": Noul(instructions="x?")}, "typesafe/jev-1.13", {"provider": {"only": ["typesafe"]}})
+    assert body == {
+        "state": "s",
+        "model": "typesafe/jev-1.13",
+        "questions": {"q": {"type": "noul", "instructions": "x?"}},
+        "provider": {"only": ["typesafe"]},
+    }
+
+
+def test_a_request_with_assets_is_not_cacheable() -> None:
+    with pytest.raises(NotCacheableError, match="assets"):
+        request_body(object(), {"q": Noul(instructions="x?")}, "m", None)
