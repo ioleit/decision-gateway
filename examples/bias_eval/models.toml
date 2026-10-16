@@ -1,0 +1,59 @@
+# The models the scripts and the page offer, by name: the same entries as the gateway's
+# models.example.toml (see there for every field and how the requirements were chosen).
+# OpenRouter models need OPENROUTER_API_KEY to ask; the page reads stored answers only and
+# needs no key.
+
+# Equal odds for every candidate: the no-preference reference, free and local.
+[models.uniform]
+backend = "uniform"
+display_name = "Uniform (equal odds)"
+
+[models.jev]
+backend = "openrouter"
+model = "typesafe/jev-1.13"
+display_name = "TypeSafe Jev 1.13"
+extra_body = { provider = { only = ["typesafe"], allow_fallbacks = false } }
+requirements = { systemone_response_model_id = "typesafe/jev-1.13-20260917", openrouter_response_provider = "TypeSafe" }
+
+[models.pplx-decider]
+backend = "openrouter"
+model = "perplexity/pplx-decider-v1.1-27b"
+display_name = "Perplexity Decider v1.1 27B"
+extra_body = { provider = { only = ["perplexity"], allow_fallbacks = false } }
+requirements = { systemone_response_model_id = "perplexity/pplx-decider-v1.1-27b-20261006", openrouter_response_provider = "Perplexity" }
+
+[models.microsoft-decision-1]
+backend = "openrouter"
+model = "microsoft/microsoft-decision-1"
+display_name = "Microsoft Decision-1"
+extra_body = { provider = { only = ["azure"], allow_fallbacks = false } }
+requirements = { systemone_response_model_id = "microsoft/microsoft-decision-1-20261009", openrouter_response_provider = "Azure" }
+
+[models.liquid-d1]
+backend = "openrouter"
+model = "liquid/d1"
+display_name = "Liquid d1"
+extra_body = { provider = { only = ["liquid"], allow_fallbacks = false } }
+requirements = { systemone_response_model_id = "liquid/d1-20260930", openrouter_response_provider = "Liquid" }
+
+[models.openai-decisions]
+backend = "openrouter"
+model = "openai/gpt-6-luna-decisions"
+display_name = "OpenAI GPT-6 Luna Decisions"
+extra_body = { provider = { only = ["openai"], allow_fallbacks = false } }
+requirements = { systemone_response_model_id = "openai/gpt-6-luna-decisions-20261006", openrouter_response_provider = "OpenAI" }
+
+[models.clef]
+backend = "openrouter"
+model = "cloudflare/clef"
+display_name = "Cloudflare Clef"
+extra_body = { provider = { only = ["cloudflare"], allow_fallbacks = false } }
+requirements = { openrouter_response_provider = "Cloudflare" }
+
+[models.clef-flash]
+backend = "openrouter"
+model = "cloudflare/clef-flash"
+display_name = "Cloudflare Clef Flash"
+extra_body = { provider = { only = ["cloudflare"], allow_fallbacks = false } }
+requirements = { openrouter_response_provider = "Cloudflare" }
+

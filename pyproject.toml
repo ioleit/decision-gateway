@@ -45,7 +45,7 @@ exclude = ["*_test.py"]
 [tool.pytest.ini_options]
 # Unit tests next to the modules (<module>_test.py); tests/ holds the ones that span
 # the package (the built wheel).
-testpaths = ["src", "tests"]
+testpaths = ["src", "tests", "examples"]
 python_files = ["*_test.py"]
 addopts = ["--strict-markers", "--strict-config", "-ra"]
 xfail_strict = true
@@ -72,6 +72,8 @@ ignore = [
 "**/*_test.py" = ["S101", "PLR2004", "SLF001", "ARG001", "S603"]
 "tests/**" = ["S101", "PLR2004", "S603", "INP001"]
 "conftest.py" = ["INP001"]
+# Examples: scripts run from their own folder, which print what they find.
+"examples/**" = ["INP001", "T201"]
 
 [tool.mypy]
 strict = true

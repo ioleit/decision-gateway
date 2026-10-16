@@ -1,0 +1,15 @@
+# Named scrapes: what goes into the decision store, written down once. Run one with
+#
+#     python scrape.py <name> [--dry-run] [--models a,b]
+#
+# Fields: about, age (of every candidate), scenarios (ids, see scenarios.json), templates
+# (names in templates/), models (names in models.toml), and optionally workers (questions in
+# flight per model, default 16). One scenario is 3,375 questions per model and template, which
+# is what the picks page needs to show it without misses.
+
+[loan-87]
+about = "One whole question for the picks page: the landscaping business loan (87)"
+age = 30
+scenarios = [87]
+templates = ["pick-one-v2"]
+models = ["uniform", "clef-flash"]
