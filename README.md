@@ -1,9 +1,20 @@
 # decision-gateway
 
-A gateway for System One decision models such as Jev, under TypeSafe's SDK client
-([`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/)). Requests from the SDK client go
-through it: they are routed by model name, answered from the store when the same request was
-answered before, and recorded.
+Compare System One decision models such as Jev on your own questions, without paying twice
+for the same answer, and with a record of what each model actually said.
+
+decision-gateway sits underneath TypeSafe's Python SDK
+([`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/)). Your code keeps using the SDK's own
+client. Its requests pass through the gateway, which
+
+- **routes** each model name to its configuration: endpoint, key, model id, provider pin;
+- **answers from what is known**: a request answered before is served from the store;
+- **records everything**: every request and every response, with the model that actually
+  answered, when, at what cost, and labels in your own terms.
+
+Which responses count as a model's answers is decided by constraints on what the response
+reports, such as the exact release that served it. A model that changes behind the same name
+doesn't mix its answers with the old one's, and nothing paid for is thrown away.
 
 Status: early. Models are reached through TypeSafe's API, OpenRouter, any System One server,
 or `uniform`, a local baseline that gives every option equal probability.
