@@ -146,7 +146,8 @@ class HTTP(Backend):
                 reply: JSONObject = json.load(r)
                 return reply
         except urllib.error.HTTPError as e:
-            text = e.read().decode(errors="replace")
+            with e:  # an HTTPError holds the open response
+                text = e.read().decode(errors="replace")
             # A refusal is an answer. OpenRouter reports one as an HTTP error whose body says
             # so, e.g. 502 {"error": {"message": "... refused to answer question \"q\""}}.
             if "refused to answer" in text:
