@@ -1,10 +1,10 @@
-"""What the router needs from a backend: how a model is reached, and what version answers.
+"""What the router needs from a backend: how a model is reached.
 
-Request and response follow the Jev / SystemOne shape:
+Requests and responses are TypeSafe's System One API: https://docs.typesafe.ai/api, with the
+OpenAPI spec at https://api.typesafe.ai/openapi.json. In short:
 
-    request   {"model": ..., "state": <any JSON>, "questions": {name: {"type": ..., "criteria": ...}}}
-    response  {"model": ..., "answers": {name: {"type": ..., "choice"|"noul"|"score": ...,
-                                                "probabilities": {...}}}, "usage": ...}
+    request   {"model": ..., "state": <any JSON>, "questions": {name: {"type": ..., ...}}}
+    response  {"model": ..., "answers": {name: {"type": ..., ...}}, "usage": {...}}
 
 An answer the model could not give ({"type": ..., "failed": reason}: a refusal, an unreadable
 reply) is a result and is cached like any other. A transport error (timeout, HTTP 5xx) raises
@@ -15,7 +15,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from decision_router.requirements import from_config, spec
+
+if TYPE_CHECKING:
+    from decision_router.requirements import Requirement
 
 JSONObject = dict[str, Any]  # a request, a response, a models.toml entry, ...
 
@@ -34,14 +39,13 @@ class Backend(ABC):
     cache: bool = True  # False: always asked, never stored (also settable per model: cache = false)
 
     def __init__(self, name: str, entry: JSONObject | None = None) -> None:
-        self.name = name
+        self.name = name  # the name in models.toml: what answers are stored under
         self.entry: JSONObject = entry or {}
+        self.display_name: str = self.entry.get("display_name", name)
         self.cache = bool(self.entry.get("cache", type(self).cache))
-
-    def version(self) -> str | None:
-        """What answers, as it goes into the cache key. None: unknown, so nothing is cached."""
-        version: str | None = self.entry.get("version")
-        return version
+        table = self.entry.get("requirements", {})
+        self.requirements: list[Requirement] = from_config(table)
+        self.requirements_spec: JSONObject = spec(table)  # as written, for the cache key
 
     def wire(self, request: JSONObject) -> JSONObject:
         """What goes over the network for request (its translation for this API, if any)."""

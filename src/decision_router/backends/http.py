@@ -1,7 +1,7 @@
 """Jev / SystemOne over HTTP: OpenRouter, or any endpoint that takes the request as its body.
 
 Configured in models.toml (backend = "openrouter" or "http"); models.example.toml describes
-every field, how `served` and `unpinned` decide what may be cached, and has examples.
+every field, with examples.
 """
 
 from __future__ import annotations
@@ -12,21 +12,11 @@ import re
 import time
 import urllib.error
 import urllib.request
-from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 
 from .base import Backend, JSONObject, Reply
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/systemone"
-UNPINNED_HOURS = 24
-
-
-class ModelChangedError(Exception):
-    """A hosted model answered as a different model than `served` says."""
-
-
-class NotPinnedError(Exception):
-    """A model without a dated id was asked after its run's window (`unpinned`)."""
 
 
 class TransientError(Exception):
@@ -73,19 +63,7 @@ class HTTP(Backend):
             headers["Authorization"] = f"Bearer {os.environ[key_env]}"
         return url.format_map(env), headers
 
-    def _check_window(self) -> None:
-        if "unpinned" not in self.entry:
-            return
-        start = _utc(self.entry["unpinned"])
-        if datetime.now(UTC) > start + timedelta(hours=UNPINNED_HOURS):
-            raise NotPinnedError(
-                f"{self.name} has no dated model id; it may be asked new questions only for "
-                f"{UNPINNED_HOURS} h after its run started ({self.entry['unpinned']}). For a new run, "
-                "set a new `unpinned` and a new `version`."
-            )
-
     def call(self, wire: JSONObject, request: JSONObject) -> Reply:
-        self._check_window()
         raw = self._post_with_retries(*self._url_and_headers(), wire)
         if "refusal" in raw:  # the model's answer: stored as failed answers
             why = raw["refusal"].get("message") if isinstance(raw["refusal"], dict) else raw["refusal"]
@@ -99,12 +77,6 @@ class HTTP(Backend):
             return Reply(response, raw=raw)
         wrapper = self.entry.get("unwrap")
         response = raw[wrapper] if wrapper else raw
-        served = self.entry.get("served")
-        if served and response.get("model") != served:
-            raise ModelChangedError(
-                f"{self.name}: answered by {response.get('model')!r}, not {served!r}. A new model "
-                "behind the id? Check it, then give it a new `version` and `served`."
-            )
         usage = response.get("usage") or {}
         provenance = {
             k: v for k, v in (("generation", response.get("id")), ("provider", response.get("provider"))) if v
@@ -140,12 +112,6 @@ class HTTP(Backend):
             raise error(f"{self.name}: HTTP {e.code}: {text[:300]}") from None
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             raise TransientError(f"{self.name}: {type(e).__name__}: {e}") from e
-
-
-def _utc(value: datetime | str) -> datetime:
-    """`unpinned` as an aware UTC datetime: a TOML datetime or an ISO string; no offset means UTC."""
-    when = value if isinstance(value, datetime) else datetime.fromisoformat(value)
-    return when if when.tzinfo else when.replace(tzinfo=UTC)
 
 
 class OpenRouter(HTTP):

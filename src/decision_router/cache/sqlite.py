@@ -19,8 +19,8 @@ from .key import canonical
 
 DEFAULT_PATH = Path(os.environ.get("DECISION_ROUTER_CACHE", "~/.local/share/decision-router/cache.sqlite")).expanduser()
 
-COLUMNS = ("key", "model", "version", "request", "wire", "response", "raw", "asked_at", "cost", "provenance")
-JSON_COLUMNS = {"request", "wire", "response", "raw", "provenance"}
+COLUMNS = ("key", "model", "requirements", "request", "wire", "response", "raw", "asked_at", "cost", "provenance")
+JSON_COLUMNS = {"requirements", "request", "wire", "response", "raw", "provenance"}
 
 
 def schema() -> str:
@@ -31,7 +31,7 @@ def schema() -> str:
 class Record:
     key: str
     model: str
-    version: str
+    requirements: dict[str, Any]
     request: dict[str, Any]
     response: dict[str, Any]
     wire: dict[str, Any] | None = None

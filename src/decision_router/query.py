@@ -7,7 +7,7 @@
 
 Two views, the same for both sources:
 
-    answers  key, model, version, request, wire, response, raw, asked_at, cost, provenance
+    answers  key, model, requirements, request, wire, response, raw, asked_at, cost, provenance
              (the JSON columns as DuckDB JSON: response->>'$.answers.q.choice')
     labels   key, labels (JSON)
 

@@ -3,7 +3,7 @@
     from decision_router import Cache, Router
     from decision_router.testing import Fake, choice
 
-    fake = Fake("fake", {"version": "fake/1"})
+    fake = Fake("fake")
     router = Router({"fake": fake}, Cache(tmp_path / "cache.sqlite"))
     router.ask("fake", choice("A", "B"))
     assert fake.calls == 1

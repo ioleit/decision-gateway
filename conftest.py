@@ -19,7 +19,7 @@ def cache(tmp_path: Path) -> Iterator[Cache]:
 
 @pytest.fixture
 def fake() -> Fake:
-    return Fake("fake", {"version": "fake/1"})
+    return Fake("fake")
 
 
 @pytest.fixture

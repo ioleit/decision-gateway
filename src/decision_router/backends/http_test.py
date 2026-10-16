@@ -1,16 +1,17 @@
 """The HTTP / OpenRouter backend against a local server that replays recorded reply shapes."""
 
 import json
+import re
 import threading
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
 from decision_router import Cache, Router
 from decision_router.backends import JSONObject, OpenRouter
-from decision_router.backends.http import HTTP, MissingKeyError, ModelChangedError, NotPinnedError, TransientError
+from decision_router.backends.http import HTTP, MissingKeyError, TransientError
+from decision_router.requirements import RequirementNotMetError
 from decision_router.testing import choice
 
 # The shape of an OpenRouter answer from typesafe/jev-1.13.
@@ -76,8 +77,7 @@ def jev(server: Server, monkeypatch: pytest.MonkeyPatch) -> OpenRouter:
             "url": server.url,
             "model": "typesafe/jev-1.13",
             "provider": {"only": ["typesafe"], "allow_fallbacks": False},
-            "version": f"openrouter:{SERVED}@typesafe",
-            "served": SERVED,
+            "requirements": {"systemone_response_model_id": SERVED, "openrouter_response_provider": "TypeSafe"},
             "retries": 2,
         },
     )
@@ -108,18 +108,31 @@ def test_wire(jev: OpenRouter) -> None:
     assert jev.wire({**choice("A", "B"), "model": "jev"}) == expected
 
 
-def test_another_model_answering_is_not_cached(server: Server, jev: OpenRouter, cache: Cache) -> None:
+def test_an_answer_from_another_model_is_not_stored(server: Server, jev: OpenRouter, cache: Cache) -> None:
     server.replies.append((200, lambda body: answer(body, model="typesafe/jev-1.14-20261101")))
-    with pytest.raises(ModelChangedError):
+    with pytest.raises(RequirementNotMetError, match=re.escape("served by 'typesafe/jev-1.14-20261101'")):
         Router({"jev": jev}, cache).ask("jev", choice("A", "B"))
     assert cache.counts() == (0, 0)
 
 
-def test_refusal_is_a_cached_failed_answer(server: Server, jev: OpenRouter, cache: Cache) -> None:
-    server.replies.append((502, {"error": {"message": 'OpenAI refused to answer question "pick"'}}))
-    r = Router({"jev": jev}, cache).ask("jev", choice("A", "B"))
+REFUSAL = (502, {"error": {"message": 'OpenAI refused to answer question "pick"'}})
+
+
+def test_refusal_is_a_cached_failed_answer(server: Server, cache: Cache, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    plain = OpenRouter("plain", {"url": server.url, "model": "typesafe/jev-1.13"})
+    server.replies.append(REFUSAL)
+    r = Router({"plain": plain}, cache).ask("plain", choice("A", "B"))
     assert r["answers"]["pick"]["failed"].startswith("refusal: OpenAI refused")
     assert cache.counts()[0] == 1
+
+
+def test_a_refusal_does_not_meet_a_model_id_requirement(server: Server, jev: OpenRouter, cache: Cache) -> None:
+    # a refusal names no model that answered, so it cannot be stored under a model id requirement
+    server.replies.append(REFUSAL)
+    with pytest.raises(RequirementNotMetError, match=re.escape("served by 'typesafe/jev-1.13'")):
+        Router({"jev": jev}, cache).ask("jev", choice("A", "B"))
+    assert cache.counts() == (0, 0)
 
 
 def test_transient_errors_are_retried(
@@ -154,21 +167,8 @@ def test_without_a_key_cached_answers_are_still_served(
     assert len(server.requests) == 1
 
 
-def test_unpinned_window(server: Server, monkeypatch: pytest.MonkeyPatch, cache: Cache) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
-    now = datetime.now(UTC)
-    entry = {"url": server.url, "model": "example/undated", "version": "undated run 1"}
-    fresh = OpenRouter("undated", {**entry, "unpinned": now.isoformat()})
-    old = OpenRouter("undated", {**entry, "unpinned": (now - timedelta(hours=25)).isoformat()})
-    Router({"undated": fresh}, cache).ask("undated", choice("A", "B"))
-    stale = Router({"undated": old}, cache)
-    assert stale.ask("undated", choice("A", "B"))["model"] == SERVED  # cached: still served
-    with pytest.raises(NotPinnedError):
-        stale.ask("undated", choice("A", "B", "C"))
-
-
 def test_plain_http_without_model_or_key(server: Server, cache: Cache) -> None:
-    local = HTTP("local", {"url": server.url, "model": "", "version": "org/repo@abc"})
+    local = HTTP("local", {"url": server.url, "model": ""})
     Router({"local": local}, cache).ask("local", choice("A", "B"))
     assert "model" not in server.requests[0]["body"]
     assert server.requests[0]["auth"] is None
@@ -176,23 +176,7 @@ def test_plain_http_without_model_or_key(server: Server, cache: Cache) -> None:
 
 def test_unwrap(server: Server, cache: Cache) -> None:
     server.replies.append((200, lambda body: {"result": answer(body), "success": True}))
-    cf = HTTP("cf", {"url": server.url, "version": "v", "unwrap": "result"})
+    cf = HTTP("cf", {"url": server.url, "unwrap": "result"})
     Router({"cf": cf}, cache).ask("cf", choice("A", "B"))
     raw = cache.con.execute("SELECT raw FROM answers").fetchone()[0]
     assert json.loads(raw)["success"] is True
-
-
-@pytest.mark.parametrize(
-    "unpinned",
-    [
-        datetime(2020, 1, 1, tzinfo=UTC),  # unquoted in TOML: tomllib gives a datetime
-        datetime(2020, 1, 1),  # noqa: DTZ001 (TOML local datetime, no offset)
-        "2020-01-01T00:00:00Z",
-        "2020-01-01T00:00:00",  # no offset: taken as UTC
-    ],
-)
-def test_unpinned_formats(server: Server, cache: Cache, unpinned: object, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
-    old = OpenRouter("u", {"url": server.url, "version": "v", "unpinned": unpinned})
-    with pytest.raises(NotPinnedError):
-        Router({"u": old}, cache).ask("u", choice("A", "B"))

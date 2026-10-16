@@ -22,8 +22,3 @@ def test_answers_every_question_uniformly() -> None:
     assert len(a["rate"]["probabilities"]) == 3
     assert a["bare"]["probabilities"] == {"true": 0.5, "false": 0.5}
     assert r.cost == 0.0
-
-
-def test_version() -> None:
-    assert Uniform("uniform").version() == "uniform/1"
-    assert Uniform("uniform", {"version": "uniform/2"}).version() == "uniform/2"

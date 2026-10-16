@@ -2,7 +2,8 @@ import threading
 
 import pytest
 
-from decision_router import Cache, Router
+from decision_router import Cache, Record, Router
+from decision_router.requirements import RequirementNotMetError
 from decision_router.testing import Fake, choice
 
 
@@ -40,21 +41,19 @@ def test_labels_are_not_in_the_key(router: Router, fake: Fake, cache: Cache) -> 
     assert cache.counts() == (1, 2)
 
 
-def test_a_new_version_is_a_new_key(cache: Cache) -> None:
-    v1, v2 = Fake("m", {"version": "m/1"}), Fake("m", {"version": "m/2"})
+def test_changed_requirements_are_a_new_key(cache: Cache) -> None:
+    v1, v2 = Fake("m"), Fake("m", {"requirements": {"systemone_response_model_id": "m"}})
     Router({"m": v1}, cache).ask("m", choice("A", "B"))
     Router({"m": v2}, cache).ask("m", choice("A", "B"))
     assert (v1.calls, v2.calls) == (1, 1)
 
 
-def test_unknown_version_or_cache_off_is_never_stored(cache: Cache) -> None:
-    unversioned, off = Fake("u"), Fake("o", {"version": "o/1", "cache": False})
-    router = Router({"u": unversioned, "o": off}, cache)
+def test_cache_off_is_never_stored(cache: Cache) -> None:
+    off = Fake("o", {"cache": False})
+    router = Router({"o": off}, cache)
     for _ in range(2):
-        router.ask("u", choice("A", "B"))
         router.ask("o", choice("A", "B"))
-    assert (unversioned.calls, off.calls) == (2, 2)
-    assert router.key("u", choice("A")) is None
+    assert off.calls == 2
     assert router.key("o", choice("A")) is None
     assert cache.counts() == (0, 0)
 
@@ -85,15 +84,15 @@ def test_a_response_that_misses_questions_is_an_error(router: Router, fake: Fake
 
 def test_provenance_is_stored(router: Router, cache: Cache) -> None:
     router.ask("fake", choice("A", "B"))
-    row = cache.con.execute("SELECT model, version, wire, raw, cost, provenance, asked_at FROM answers").fetchone()
-    model, version, wire, raw, cost, provenance, asked_at = row
-    assert (model, version, wire, cost, provenance) == ("fake", "fake/1", None, 0.001, '{"generation":"gen-1"}')
+    row = cache.con.execute("SELECT model, requirements, wire, raw, cost, provenance, asked_at FROM answers").fetchone()
+    model, requirements, wire, raw, cost, provenance, asked_at = row
+    assert (model, requirements, wire, cost, provenance) == ("fake", "{}", None, 0.001, '{"generation":"gen-1"}')
     assert raw.startswith('{"wrapped":')
     assert asked_at.endswith("Z")
 
 
 def test_one_call_for_concurrent_asks_in_one_process(cache: Cache) -> None:
-    slow = Fake("slow", {"version": "s/1"}, delay=0.2)
+    slow = Fake("slow", delay=0.2)
     router = Router({"slow": slow}, cache)
     out = []
     threads = [threading.Thread(target=lambda: out.append(router.ask("slow", choice("A", "B")))) for _ in range(8)]
@@ -116,3 +115,39 @@ def test_uniform_through_the_router(router: Router, cache: Cache) -> None:
 def test_unknown_model(router: Router) -> None:
     with pytest.raises(KeyError, match="unknown model"):
         router.ask("nope", choice("A"))
+
+
+PAST = ["2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z"]
+
+
+def test_a_request_requirement_not_met_sends_nothing(cache: Cache) -> None:
+    late = Fake("m", {"requirements": {"request_date_range": PAST}})
+    with pytest.raises(RequirementNotMetError, match="not sent, new questions may be sent only between"):
+        Router({"m": late}, cache).ask("m", choice("A", "B"))
+    assert late.calls == 0
+    assert cache.counts() == (0, 0)
+
+
+def test_a_response_requirement_not_met_stores_nothing(cache: Cache) -> None:
+    other = Fake("m", {"requirements": {"systemone_response_model_id": "m-20261101"}})
+    with pytest.raises(RequirementNotMetError, match="response not stored, served by 'm', not 'm-20261101'"):
+        Router({"m": other}, cache).ask("m", choice("A", "B"), labels={"t": 1})
+    assert other.calls == 1
+    assert cache.counts() == (0, 0)
+
+
+def test_requirements_apply_without_a_cache_too() -> None:
+    other = Fake("m", {"requirements": {"systemone_response_model_id": "m-20261101"}})
+    with pytest.raises(RequirementNotMetError):
+        Router({"m": other}).ask("m", choice("A", "B"))
+
+
+def test_cached_answers_are_served_when_a_request_requirement_no_longer_holds(cache: Cache) -> None:
+    # the same requirements (so the same key), now outside the date range: cached answers still come back
+    late = Fake("m", {"requirements": {"request_date_range": PAST}})
+    router = Router({"m": late}, cache)
+    k = router.key("m", choice("A", "B"))
+    assert k is not None
+    cache.put(Record(key=k, model="m", requirements=late.requirements_spec, request={}, response={"answers": {}}))
+    assert router.ask("m", choice("A", "B")) == {"answers": {}}
+    assert late.calls == 0

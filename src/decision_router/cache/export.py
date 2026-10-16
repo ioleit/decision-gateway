@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from decision_router import query
-from decision_router.cache.sqlite import COLUMNS, DEFAULT_PATH
+from decision_router.cache.sqlite import COLUMNS, DEFAULT_PATH, JSON_COLUMNS
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -28,10 +28,7 @@ def export(source: str | Path = DEFAULT_PATH, out: str | Path = "export", keys: 
     con = query.connect(source)
     chosen = f"key IN ({keys})" if keys else "TRUE"
     # JSON columns go out as text, exactly as the cache stores them.
-    cols = ", ".join(
-        f"CAST({c} AS VARCHAR) AS {c}" if c in {"request", "wire", "response", "raw", "provenance"} else c
-        for c in COLUMNS
-    )
+    cols = ", ".join(f"CAST({c} AS VARCHAR) AS {c}" if c in JSON_COLUMNS else c for c in COLUMNS)
     con.execute(f"CREATE TEMP TABLE chosen AS SELECT {cols} FROM answers WHERE {chosen} ORDER BY key")
     con.execute(
         "CREATE TEMP TABLE chosen_labels AS SELECT key, CAST(labels AS VARCHAR) AS labels FROM labels "

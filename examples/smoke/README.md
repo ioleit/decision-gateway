@@ -17,7 +17,7 @@ python examples/smoke/run.py --model jev     # OpenRouter: needs OPENROUTER_API_
 
 `golden/<model>/` holds that model's answers to questions 6–10: `uniform` and `jev` (asked
 2026-10-16, typesafe/jev-1.13-20260917 via OpenRouter). A preheated answer is only served to
-the same model and version, because both are part of the cache key. To make a golden set for
+the same model name with the same requirements, because both are part of the cache key. To make a golden set for
 another model:
 
 ```bash

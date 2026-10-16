@@ -9,5 +9,8 @@ backend = "uniform"
 backend = "openrouter"
 model = "typesafe/jev-1.13"
 provider = { only = ["typesafe"], allow_fallbacks = false }
-version = "openrouter:typesafe/jev-1.13-20260917@typesafe"
-served = "typesafe/jev-1.13-20260917"
+display_name = "Jev 1.13 (2026-09-17)"
+
+[models.jev.requirements]
+systemone_response_model_id = "typesafe/jev-1.13-20260917"
+openrouter_response_provider = "TypeSafe"

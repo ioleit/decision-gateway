@@ -1,11 +1,6 @@
-"""models.toml: which models there are, how each is reached and what version answers.
+"""models.toml: which models there are and how each is reached.
 
-    [models.uniform]
-    backend = "uniform"        # a name in backends.BACKENDS
-    version = "uniform/1"      # optional for backends that know their own version
-    cache = true               # optional; false: always asked, never stored
-
-Every other field is the backend's (url, key_env, provider, ...).
+models.example.toml at the top of the repository describes every field, with examples.
 """
 
 from __future__ import annotations

@@ -6,14 +6,8 @@ from typing import Any
 
 from .base import Backend, JSONObject, Reply
 
-VERSION = "uniform/1"  # change when the answers it gives change
-
 
 class Uniform(Backend):
-    def version(self) -> str:
-        version: str = self.entry.get("version", VERSION)
-        return version
-
     def call(self, wire: JSONObject, request: JSONObject) -> Reply:
         answers: JSONObject = {}
         for name, q in wire["questions"].items():

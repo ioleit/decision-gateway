@@ -13,7 +13,7 @@ and preheating, with uniform or live with Jev through OpenRouter.
 - **Router**: `Router.ask(model, request, labels=...)` answers from the cache, or asks the
   model's backend and caches the answer.
 - **Cache**: one SQLite file (WAL), shared by every process on a machine. An answer is keyed
-  by model, version and the request exactly as sent, and is final.
+  by the model's name, its requirements and the request exactly as sent, and is final.
 - **Labels**: what a question is about, in the caller's terms: any JSON object, several per
   answer. Never part of the key and never used to find an answer; only for queries.
 - **Query** (`decision_router.query`): read-only SQL with DuckDB over the cache or an export,
@@ -58,7 +58,7 @@ con.sql("""SELECT model, labels->>'task' AS task, count(*) AS n
 ```
 
 ```bash
-decision-router query "SELECT model, version, count(*) FROM answers GROUP BY ALL"
+decision-router query "SELECT model, count(*) FROM answers GROUP BY ALL"
 decision-router export exports/run-1 --keys "SELECT key FROM answers WHERE model = 'uniform'"
 decision-router export exports/run-1 --push you/decision-answers      # private by default
 decision-router preheat hf://you/decision-answers
@@ -70,11 +70,14 @@ first use.
 
 ## The cache key
 
-`sha256(json.dumps([model, version, wire], sort_keys=True, ensure_ascii=False))`, where
-`wire` is the request as it goes over the network. A new model version is a new key, so the
-version must say exactly what answered: pinned weights (`org/repo@<commit>`) or a dated API
-model id. The format is frozen by golden hashes (`src/decision_router/cache/key_test.py`), so an export preheats
-any cache to the same hits.
+`sha256(json.dumps([model, requirements, wire], sort_keys=True, ensure_ascii=False))`:
+the model's name in `models.toml`, its `requirements` table as written, and the request as it
+goes over the network. The name is the model's identity: a different model gets a different
+name. Requirements reject responses that don't come from the model the name stands for, and
+changing them starts a new set of answers (see `models.example.toml`).
+
+The format is frozen by golden hashes (`src/decision_router/cache/key_test.py`), so an
+export preheats any cache to the same hits.
 
 ## Layout
 

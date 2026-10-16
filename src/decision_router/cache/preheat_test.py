@@ -25,7 +25,7 @@ def test_roundtrip(tmp_path: Path, router: Router, cache: Cache, fake: Fake, req
     request.addfinalizer(fresh.close)
     assert preheat(tmp_path / "exp", fresh) == (30, 30)
 
-    cold = Fake("fake", {"version": "fake/1"})
+    cold = Fake("fake")
     deployed = Router({"fake": cold, "uniform": router.models["uniform"]}, fresh)
     for q in QUESTIONS:
         assert deployed.ask("fake", q) == router.ask("fake", q)

@@ -5,7 +5,7 @@ from decision_router import Cache, Record
 
 
 def rec(k: str, answer: str = "A") -> Record:
-    return Record(key=k, model="m", version="v", request={"q": k}, response={"answers": {"q": answer}})
+    return Record(key=k, model="m", requirements={}, request={"q": k}, response={"answers": {"q": answer}})
 
 
 def test_first_answer_stays(cache: Cache) -> None:
