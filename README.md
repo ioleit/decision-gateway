@@ -12,8 +12,8 @@ client, but its requests pass through the gateway, which
   customizable constraints;
 - **records decisions**: every request and every response, with arbitrary application-side
   labels;
-- **answers locally**: with a single forward pass, decision models are close to deterministic,
-  so answers can be sourced from an application-side cache.
+- **answers locally**: a single forward pass makes decision models effectively deterministic,
+  so their answers can be cached on the application side.
 
 ## Install
 
