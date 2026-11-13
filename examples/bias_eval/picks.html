@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Who gets the coin?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Who gets the coin: any discrim-eval question, any four players. Answers come from
+   /api/decide (server.py), which reads them from the decision store and never asks a model;
+   scenarios, texts and the wording of the tasks (the templates) from /api/datasets.
+   Each pick: three people light up, the probabilities fill in, the winner gets a coin.
+   Coins only add up and survive any change. */
+:root {
+  --bg: #eef0ec; --panel: #f9faf7; --ink: #1c221f; --muted: #5b6560; --line: #d5dad4; --accent: #3b4541;
+  --coin: #d9a400; --coin-edge: #9c7600; --hi: #1c221f; --soft: #7d8681; --quote: #7a3fd1; --bad: #c43a2a;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141816; --panel: #1c211f; --ink: #e4e8e5; --muted: #9aa49f; --line: #2e3532; --accent: #c9d2cd;
+    --coin: #f0b429; --coin-edge: #b8860b; --hi: #e4e8e5; --soft: #a2aaa6; --quote: #b48cf2; --bad: #f0745f;
+    color-scheme: dark;
+  }
+}
+html, body { background: var(--bg); color: var(--ink); margin: 0; }
+body { font-family: var(--body); font-size: 15px; line-height: 1.45; }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 20px 16px 32px; display: grid; gap: 14px; }
+button, select, input { font: inherit; font-size: 14px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; }
+button, select { cursor: pointer; }
+button:hover, select:hover { border-color: var(--accent); }
+label { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); padding: 0; width: min(760px, calc(100vw - 32px)); max-height: min(80vh, 900px); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.picker { display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: min(80vh, 900px); }
+.picker header { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); }
+.picker header input { flex: 1; min-width: 0; }
+.picker ol { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
+.picker li button { display: grid; grid-template-columns: 2.4em minmax(0, 1fr); gap: 2px 8px; width: 100%; text-align: left; border: 1px solid transparent; background: none; padding: 8px 10px; border-radius: 8px; }
+.picker li button:hover, .picker li button:focus-visible { background: var(--panel); border-color: var(--line); outline: none; }
+.picker li button[aria-current="true"] { border-color: var(--accent); background: var(--panel); }
+.picker .n { font-family: var(--mono); font-size: 12px; color: var(--muted); padding-top: 3px; }
+.picker .qq { font-weight: 600; }
+.picker .none { padding: 16px; color: var(--muted); }
+
+.assembly { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: start; padding: 8px 16px; }
+.row:first-child { padding-top: 14px; } .row:last-child { padding-bottom: 14px; }
+.instr, .q { margin: 0; font-family: var(--display); font-weight: 600; line-height: 1.3; }
+.instr { color: var(--soft); font-size: clamp(16px, 2vw, 19px); }
+.q { color: var(--ink); font-size: clamp(20px, 2.8vw, 27px); }
+.q .quote { color: var(--quote); }
+.who-p { all: unset; cursor: pointer; text-decoration: underline; text-decoration-color: var(--muted); text-underline-offset: 3px; }
+.who-p:hover, .who-p[aria-expanded="true"] { text-decoration-color: var(--ink); text-decoration-thickness: 2px; }
+.who-p:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.side { display: flex; gap: 6px; flex-wrap: wrap; justify-content: end; }
+@media (max-width: 640px) { .row { grid-template-columns: minmax(0, 1fr); } .side { justify-content: start; } }
+button.small { font-size: 13px; padding: 4px 10px; color: var(--muted); }
+button.small:hover { color: var(--ink); }
+.toggle { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.toggle button { white-space: nowrap; border: 0; border-radius: 0; background: none; padding: 5px 12px; font-size: 13px; color: var(--muted); }
+.toggle button[aria-pressed="true"] { background: var(--accent); color: var(--bg); font-weight: 600; }
+.pop { position: absolute; z-index: 10; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18); padding: 10px 12px; display: grid; gap: 8px; }
+.pop[hidden] { display: none; }
+.pop .sel { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pop .sel b { font-size: 13px; margin-right: 4px; }
+.pop select { font-size: 13px; padding: 3px 6px; }
+.pop .text { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; max-height: 220px; overflow-y: auto; margin: 0; color: var(--muted); }
+.pop mark { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.game { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px 14px; display: grid; gap: 6px; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--muted); }
+.controls select { font-size: 12.5px; padding: 3px 6px; }
+.controls { justify-content: space-between; }
+.controls .model { font-size: 13px; gap: 8px; }
+.controls .model select { font-family: var(--display); font-weight: 600; font-size: clamp(16px, 2vw, 19px); color: var(--ink); padding: 3px 8px; }
+.controls .right { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; justify-content: end; margin-left: auto; }
+.status { text-align: right; }
+.status.err { color: var(--bad); }
+.stagewrap { width: 100%; max-width: 860px; margin: 0 auto; }
+svg.stage { width: 100%; height: auto; display: block; }
+.labels { position: relative; height: 3.2em; }
+.labels .who-p { position: absolute; top: 0; transform: translateX(-50%); max-width: 24%; text-align: center; font-family: var(--display); font-weight: 600; font-size: clamp(12px, 1.7vw, 16px); line-height: 1.25; color: var(--soft); }
+svg.stage text { font-family: var(--body); }
+.topbar { padding-bottom: 2px; }
+.switch { font-size: 13.5px; color: var(--muted); gap: 10px; align-items: center; cursor: pointer; }
+.switch b { color: var(--ink); font-weight: 600; }
+.switch input { appearance: none; flex: none; width: 36px; height: 20px; margin: 0; border-radius: 10px; background: var(--line); position: relative; cursor: pointer; transition: background 0.2s; }
+.switch input::before { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); transition: left 0.2s; }
+.switch input:checked { background: var(--accent); }
+.switch input:checked::before { left: 18px; }
+.switch input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bad { color: var(--bad); font-weight: 600; }
+.foot { font-size: 13px; color: var(--muted); max-width: 86ch; }
+details { font-size: 13px; color: var(--muted); }
+details summary { cursor: pointer; }
+pre { font-size: 12px; line-height: 1.4; background: var(--panel); border: 1px solid var(--line); padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; color: var(--ink); }
+a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <dialog id="picker" aria-label="Choose a question">
+    <div class="picker">
+      <header><input id="search" type="search" placeholder="Search the questions: loan, kidney, visa…" autocomplete="off"><button id="close">Close</button></header>
+      <ol id="list"></ol>
+    </div>
+  </dialog>
+
+  <section class="assembly" aria-label="The prompt the decision model gets">
+    <div class="row"><p class="instr" id="instr"></p>
+      <div class="side"><div class="toggle" id="ways" role="group" aria-label="How the model is asked"></div></div></div>
+    <div class="row"><p class="q" id="q">Loading…</p>
+      <div class="side"><button class="small" id="choose">Change</button><button class="small" id="shuffle">Random</button></div></div>
+  </section>
+  <div class="pop" id="pop" hidden></div>
+
+  <section class="game" aria-label="Coins">
+    <div class="controls">
+      <label class="model" for="model">decision model <select id="model"></select></label>
+      <div class="right">
+        <span class="status" id="status" role="status"></span>
+        <button class="small" id="play">Pause</button>
+        <select id="speed" aria-label="Speed"><option value="2200">slow</option><option value="1300" selected>normal speed</option><option value="600">fast</option><option value="200">very fast</option><option value="step">single step</option></select>
+        <button class="small" id="step" aria-label="Next pick" hidden>&gt;</button>
+        <button class="small" id="reset">Reset coins</button>
+      </div>
+    </div>
+    <div class="stagewrap">
+    <svg class="stage" id="stage" viewBox="0 0 640 288" role="img" aria-label="Coins per person"></svg>
+    <div class="labels" id="chips"></div>
+    </div>
+    <div id="exchange" hidden></div>
+  </section>
+
+
+</div>
+
+<script>
+"use strict";
+const API = "../api/";
+const DATASET = "discrim-eval-explicit";
+// The ways of asking (tasks) are the server's templates, from /api/datasets on start.
+// Display names, from /api/models (models.toml) on start.
+const MODEL_NAMES = {};
+const NOUN = { "male": "man", "female": "woman", "non-binary": "non-binary person" };
+const PER = 4, PLAYERS = 4, AHEAD = 12;
+const $ = (id) => document.getElementById(id);
+const f1 = (v) => (+v).toFixed(1);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const clamp = (v) => Math.max(0, Math.min(1, v));
+const span = (f, a, b) => clamp((f - a) / (b - a));
+const ease = (v) => (v < 0.5 ? 2 * v * v : 1 - Math.pow(-2 * v + 2, 2) / 2);
+const pct = (p) => `${Math.round(p * 100)}%`;
+// The message of an error response: FastAPI says {detail: "..."} or {detail: [{msg}, ...]}.
+const detail = (d) => (typeof d.detail === "string" ? d.detail : Array.isArray(d.detail) ? d.detail.map((x) => x.msg).join("; ") : "");
+const draw1 = (w) => { const t = w.reduce((a, b) => a + b, 0) || 1; let r = Math.random() * t; for (let i = 0; i < w.length; i++) { r -= w[i]; if (r < 0) return i; } return w.length - 1; };
+
+// ---- state ----
+const DEFAULT_PLAYERS = [
+  { age: 30, gender: "male", race: "white" }, { age: 30, gender: "female", race: "white" },
+  { age: 30, gender: "male", race: "Black" }, { age: 30, gender: "female", race: "Black" },
+];
+const S = {
+  meta: null, scenario: "34", model: "clef-flash",
+  players: null,
+  coins: { together: Array(PER * PLAYERS).fill(0) },
+  picks: 0, T: 1300, paused: false,
+  step: false,     // single step: each pick stops just before its coin drops, until ">"
+  queue: [],       // upcoming picks: {trio: [person index x3], key}
+  memo: new Map(), // answer key -> {together} | {error}
+  cur: null,       // the pick on stage: {trio, ans, won: {together}, t0}
+  waitingSince: 0, lastError: "",
+  view: "together", // the stage shows the three asked together
+  task: "pick-one",  // which template is asked: a task of /api/datasets
+  misses: { together: 0 },
+  texts: new Map(),  // scenario|player -> the application, word for word
+};
+S.players = DEFAULT_PLAYERS.map((p) => ({ ...p }));
+const groupOf = (i) => Math.floor(i / PER);
+const pkey = (p) => `${p.age}|${p.gender}|${p.race}`;
+const words = (p) => `${p.age}-year-old ${p.race} ${NOUN[p.gender]}`;
+const ansKey = (trio) => `${S.model}|${S.task}|${S.scenario}|${trio.map((i) => pkey(S.players[groupOf(i)])).join("/")}`;
+
+// ---- URL hash keeps the setup shareable: #q=34&m=clef-flash&p=30.male.white,30.non-binary.Native_American,... ----
+function readHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.has("q")) S.scenario = h.get("q");
+  if (h.has("m")) S.model = h.get("m");
+  if (h.has("v")) S.task = h.get("v");
+  if (h.has("p")) {
+    const ps = h.get("p").split(",").map((s) => { const [age, gender, race = ""] = s.split("."); return { age: +age, gender, race: race.replace(/_/g, " ") }; });
+    if (ps.length === PLAYERS) S.players = ps;
+  }
+}
+function writeHash() {
+  const p = S.players.map((x) => `${x.age}.${x.gender}.${x.race.replace(/ /g, "_")}`).join(",");
+  history.replaceState(null, "", `#q=${S.scenario}&m=${S.model}&v=${S.task}&p=${p}`);
+}
+
+// ---- the question ----
+function question() { return S.meta.scenarios.find((q) => q.id === S.scenario) || S.meta.scenarios[0]; }
+function showQuestion() {
+  const q = question();
+  $("q").innerHTML = `<span class="quote">“</span>${esc(q.short_summary)}<span class="quote">”</span>`;
+}
+function renderList(filter) {
+  const f = filter.trim().toLowerCase();
+  const qs = S.meta.scenarios.filter((q) => !f || `${q.id} ${q.short_summary}`.toLowerCase().includes(f));
+  $("list").innerHTML = qs.length ? qs.map((q) => `<li><button data-id="${esc(q.id)}"${q.id === S.scenario ? ' aria-current="true"' : ""}><span class="n">${esc(q.id)}</span><span class="qq">${esc(q.short_summary)}</span></button></li>`).join("")
+    : `<li class="none">No question matches.</li>`;
+}
+function setScenario(id) { S.scenario = id; showQuestion(); renderBox(); changed(); }
+$("choose").addEventListener("click", () => { renderList($("search").value); $("picker").showModal(); $("search").focus(); const c = $("list").querySelector('[aria-current="true"]'); if (c) c.scrollIntoView({ block: "center" }); });
+$("close").addEventListener("click", () => $("picker").close());
+$("picker").addEventListener("click", (e) => { if (e.target === $("picker")) $("picker").close(); });
+$("search").addEventListener("input", (e) => renderList(e.target.value));
+$("search").addEventListener("keydown", (e) => { if (e.key === "Enter") { const b = $("list").querySelector("button"); if (b) b.click(); } if (e.key === "ArrowDown") { e.preventDefault(); const b = $("list").querySelector("button"); if (b) b.focus(); } });
+$("list").addEventListener("keydown", (e) => {
+  const bs = [...$("list").querySelectorAll("button")], i = bs.indexOf(document.activeElement);
+  if (e.key === "ArrowDown" && i < bs.length - 1) { e.preventDefault(); bs[i + 1].focus(); }
+  if (e.key === "ArrowUp") { e.preventDefault(); (i > 0 ? bs[i - 1] : $("search")).focus(); }
+});
+$("list").addEventListener("click", (e) => { const b = e.target.closest("button[data-id]"); if (b) { $("picker").close(); setScenario(b.dataset.id); } });
+$("shuffle").addEventListener("click", () => { const qs = S.meta.scenarios.filter((q) => q.id !== S.scenario); setScenario(qs[Math.floor(Math.random() * qs.length)].id); });
+
+$("model").addEventListener("change", (e) => { S.model = e.target.value; changed(); });
+
+// Anything changed: keep the coins and the pick on stage, redraw the upcoming picks.
+function changed() {
+  S.queue = [];
+  S.lastError = "";
+  writeHash();
+  fill();
+  loadTexts(S.scenario, S.players);
+  renderChips();
+}
+
+// ---- upcoming picks and their answers ----
+function fill() {
+  while (S.queue.length < AHEAD) {
+    const idx = [...Array(PER * PLAYERS).keys()];
+    for (let k = 0; k < 3; k++) { const j = k + Math.floor(Math.random() * (idx.length - k)); [idx[k], idx[j]] = [idx[j], idx[k]]; }
+    const trio = idx.slice(0, 3);
+    S.queue.push({ trio, key: ansKey(trio), task: S.task, scenario: S.scenario, people: trio.map((i) => S.players[groupOf(i)]) });
+  }
+}
+let fetching = false;
+async function fetchAnswers() {
+  if (fetching || !S.meta) return;
+  const need = [], seen = new Set();
+  for (const q of S.queue) if (!S.memo.has(q.key) && !seen.has(q.key)) { seen.add(q.key); need.push(q); }
+  if (!need.length) return;
+  fetching = true;
+  const model = S.model, scenario = S.scenario, TASK = S.task;
+  try {
+    const r = await fetch(API + "decide/ask", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, dataset: DATASET, scenario, tasks: [TASK],
+        groups: need.slice(0, 24).map((q) => q.people.map(pkey)) }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(detail(d) || r.statusText);
+    d.results.forEach((a, k) => {
+      S.memo.set(need[k].key, { together: a.tasks[TASK], error: a.error });
+    });
+    S.lastError = "";
+  } catch (e) {
+    S.lastError = `Could not reach the model server: ${e.message}`;
+  } finally { fetching = false; }
+}
+setInterval(fetchAnswers, 1500);
+
+// ---- the stage: people in a row by player, coins stacked upward ----
+const W = 640, BASE = 268, CW = 30, CH = 22, GAP = 6, GGAP = 22, COIN = 6.2, RX = 9.9, RY = 3.8;
+const pos = (() => {
+  const n = PER * PLAYERS, width = n * CW + (n - PLAYERS) * GAP + (PLAYERS - 1) * GGAP;
+  const out = []; let x = (W - width) / 2;
+  for (let i = 0; i < n; i++) { if (i) x += groupOf(i) === groupOf(i - 1) ? CW + GAP : CW + GGAP; out.push(x + CW / 2); }
+  return out;
+})();
+
+function drawLane(way, side, f, reduce) {
+  const pk = S.cur, coins = S.coins[way];
+  const most = Math.max(1, ...coins) + 1;
+  const step = Math.min(COIN * 1.1, (BASE - CH / 2 - 76) / most);
+  const top = (n) => BASE - CH / 2 - 6 - n * step;
+  const res = pk ? { p: pk.ans.together, won: pk.won[way] } : null;
+  const failed = pk && !res.p;  // no answer: the three flash red and nobody gets a coin
+  const settled = pk && (reduce || f >= 0.86);
+  const c = coins.slice();
+  if (pk && settled && !failed) c[pk.trio[res.won]]++;
+  const inTrio = pk ? new Map(pk.trio.map((id, k) => [id, k])) : new Map();
+  const hi = !pk ? 0 : reduce ? 1 : ease(span(f, 0, 0.18));
+  const fl = !pk ? 0 : reduce ? 1 : ease(span(f, 0.18, 0.5));
+  const win = !pk ? 0 : reduce ? 1 : span(f, 0.52, 0.6);
+  let svg = "";
+  for (let id = 0; id < PER * PLAYERS; id++) {
+    const x = pos[id], k = inTrio.get(id), lit = k !== undefined;
+    const dim = pk && !lit ? 1 - 0.55 * hi : 1;
+    const lose = lit && !failed && k !== res.won ? 1 - 0.5 * win : 1;
+    svg += `<g opacity="${(dim * lose).toFixed(2)}">`;
+    for (let j = 0; j < c[id]; j++) svg += `<ellipse cx="${f1(x)}" cy="${f1(top(j))}" rx="${RX}" ry="${RY}" style="fill:var(--coin);stroke:var(--coin-edge)" stroke-width="1"/>`;
+    const lift = lit ? 6 * hi : 0;
+    svg += `<rect x="${f1(x - CW / 2)}" y="${f1(BASE - CH / 2 - lift)}" width="${CW}" height="${CH}" rx="5" style="fill:var(--accent)"/>`;
+    svg += `<title>${esc(words(S.players[groupOf(id)]))}, ${c[id]} coin${c[id] === 1 ? "" : "s"}</title></g>`;
+  }
+  if (failed) {
+    const red = reduce ? 1 : span(f, 0.25, 0.35) * (1 - 0.6 * span(f, 0.7, 1));
+    pk.trio.forEach((id) => {
+      const x = pos[id];
+      svg += `<rect x="${f1(x - CW / 2 - 3)}" y="${f1(BASE - CH / 2 - 6 * hi - 3)}" width="${CW + 6}" height="${CH + 6}" rx="7" style="fill:var(--bad);stroke:var(--bad)" fill-opacity="${(0.45 * red).toFixed(2)}" stroke-width="3" opacity="${hi.toFixed(2)}"/>`;
+      svg += `<text x="${f1(x)}" y="${f1(top(c[id]) - 10)}" text-anchor="middle" style="fill:var(--bad);font:700 18px var(--body)" opacity="${red.toFixed(2)}">✕</text>`;
+    });
+  } else if (pk) {
+    pk.trio.forEach((id, k) => {
+      const x = pos[id], y0 = top(c[id]) - 8, p = res.p[k], won = k === res.won;
+      svg += `<g opacity="${(hi * (won ? 1 : 1 - 0.5 * win)).toFixed(2)}">`;
+      svg += `<rect x="${f1(x - CW / 2 - 3)}" y="${f1(BASE - CH / 2 - 6 * hi - 3)}" width="${CW + 6}" height="${CH + 6}" rx="7" fill="none" style="stroke:var(--hi)" stroke-width="${won && win > 0 ? 3 : 1.5}"/>`;
+      if (way === "together") svg += `<text x="${f1(x)}" y="${f1(BASE + 5 - 6 * hi)}" text-anchor="middle" style="fill:var(--bg);font:700 12px var(--body)">${"ABC"[k]}</text>`;
+      const bh = 46 * p * fl;
+      svg += `<rect x="${f1(x - 7)}" y="${f1(y0 - bh)}" width="14" height="${f1(bh)}" rx="2" style="fill:var(--hi)" opacity="0.85"/>`;
+      svg += `<text x="${f1(x)}" y="${f1(y0 - bh - 5)}" text-anchor="middle" style="fill:var(--ink);font:600 11.5px var(--mono)" opacity="${fl.toFixed(2)}">${pct(p)}</text></g>`;
+    });
+    if (!reduce && f > HOLD && f < 0.86) {
+      const id = pk.trio[res.won], t = ease(span(f, 0.6, 0.86));
+      svg += `<ellipse cx="${f1(pos[id])}" cy="${f1(8 + (top(c[id]) - 8) * t)}" rx="${RX}" ry="${RY}" style="fill:var(--coin);stroke:var(--coin-edge)" stroke-width="1.4"/>`;
+    }
+  }
+  $(`stage${side}`).innerHTML = svg;
+}
+// ---- the loop ----
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let pausedAt = 0;
+const HOLD = 0.6;  // where a pick waits in single step: winner chosen, percentages shown, coin not yet dropped
+function start(now) {
+  const next = S.queue[0];
+  if (!next) return false;
+  const ans = S.memo.get(next.key);
+  if (!ans) return false;
+  S.queue.shift(); fill();
+  if (ans.error) S.memo.delete(next.key);  // shown red this time, asked again next time
+  S.cur = { ...next, ans, t0: now, won: { together: ans.together ? draw1(ans.together) : -1 } };
+  S.waitingSince = 0;
+  return true;
+}
+function finish() {
+  const pk = S.cur;
+  for (const way of ["together"]) {
+    if (pk.won[way] >= 0) S.coins[way][pk.trio[pk.won[way]]]++;
+    else S.misses[way]++;
+  }
+  S.picks++;
+  S.cur = null;
+}
+function status(now) {
+  const el = $("status");
+  if (S.lastError) { el.textContent = S.lastError; el.classList.add("err"); return; }
+  el.classList.remove("err");
+  if (!S.meta) { el.textContent = "Loading…"; return; }
+  if (S.paused) { el.textContent = "Paused."; return; }
+  if (!S.cur && S.waitingSince) {
+    const s = Math.round((now - S.waitingSince) / 1000);
+    el.textContent = s < 4 ? "Looking up the answers…" : `Looking up ${MODEL_NAMES[S.model]}'s answers… ${s} s`;
+    return;
+  }
+  const cached = S.queue.filter((q) => S.memo.has(q.key)).length;
+  el.textContent = cached < S.queue.length ? `${cached} of the next ${S.queue.length} picks looked up; looking up the rest.` : "";
+}
+function frame(now) {
+  if (S.meta) {
+    if (!S.paused) {
+      if (S.cur && !S.step && now - S.cur.t0 >= S.T) finish();
+      if (!S.cur && !start(now) && !S.waitingSince) S.waitingSince = now;
+    }
+    const t = S.paused ? pausedAt : now;
+    const f = S.cur ? Math.min(S.step ? HOLD : 1, (t - S.cur.t0) / S.T) : 0;
+    const fast = S.T < 400 || reduceMotion;
+    drawLane(S.view, "", f, fast);
+    showExchange();
+    status(now);
+  }
+  requestAnimationFrame(frame);
+}
+
+$("play").addEventListener("click", () => {
+  const now = performance.now();
+  if (S.paused) { if (S.cur) S.cur.t0 += now - pausedAt; S.paused = false; $("play").textContent = "Pause"; }
+  else { pausedAt = now; S.paused = true; $("play").textContent = "Play"; }
+});
+$("speed").addEventListener("change", (e) => {
+  S.step = e.target.value === "step";
+  $("step").hidden = !S.step;
+  if (!S.step) { S.T = +e.target.value; return; }
+  S.T = 1300;
+  // A pick already past the hold point gets its coin, so the next one stops in place.
+  if (S.cur && (S.paused ? pausedAt : performance.now()) - S.cur.t0 >= HOLD * S.T) finish();
+});
+// Single step: the exact request to the decision model and its response for the pick on stage
+// (/api/decide/raw, from the decision store), for the template it was asked with.
+const exchanges = new Map();  // pick key -> exchange | "loading" | {error}
+let shownEx = "";
+function showExchange() {
+  const pk = S.step ? S.cur : null, el = $("exchange");
+  const ex = pk && exchanges.get(pk.key), id = pk ? `${pk.key}|${S.view}|${ex === "loading" ? "l" : ex ? "y" : "n"}` : "";
+  if (id === shownEx) return;
+  shownEx = id;
+  el.hidden = !pk;
+  if (!pk) return;
+  const TASK = pk.task;
+  if (!ex) {
+    exchanges.set(pk.key, "loading");
+    fetch(API + "decide/raw", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: pk.key.split("|")[0], dataset: DATASET, scenario: pk.scenario,
+        group: pk.people.map(pkey), tasks: [TASK] }) })
+      .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(detail(d) || r.statusText); exchanges.set(pk.key, d); })
+      .catch((e) => exchanges.set(pk.key, { error: e.message }));
+    return;
+  }
+  if (ex === "loading") { el.innerHTML = "<pre>Loading…</pre>"; return; }
+  if (ex.error) { el.innerHTML = `<pre>${esc(ex.error)}</pre>`; return; }
+  const one = (x, head) => `<pre>${head}request\n${esc(JSON.stringify(x.request, null, 2))}</pre><pre>${head}response\n${esc(JSON.stringify(x.response, null, 2))}</pre>`;
+  el.innerHTML = one(ex.tasks[TASK][0], "");
+}
+$("step").addEventListener("click", () => {
+  if (S.paused) $("play").click();
+  if (S.cur) finish();  // the coin lands; the next pick starts and stops at its hold point
+});
+$("reset").addEventListener("click", () => {
+  S.coins = { together: Array(PER * PLAYERS).fill(0) };
+  S.picks = 0; S.misses = { together: 0 }; S.cur = null;
+});
+document.addEventListener("keydown", (e) => { if (e.key === " " && e.target === document.body) { e.preventDefault(); $("play").click(); } });
+
+// ---- the prompt box: 1 the task's instructions (from the server), 2 the question ----
+// A template may state the scenario's question, so they are fetched per task and scenario.
+function renderBox() {
+  const task = S.task, k = `${task}|${S.scenario}`, have = S.meta.instructions.get(k);
+  $("instr").textContent = typeof have === "string" ? have : "";
+  if (have !== undefined) return;
+  S.meta.instructions.set(k, null);
+  fetch(`${API}datasets/${DATASET}/tasks/${task}?size=3&scenario=${encodeURIComponent(S.scenario)}`)
+    .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(detail(d) || r.statusText); return d.instructions; })
+    .catch((e) => `Could not load the instructions: ${e.message}`)
+    .then((t) => { S.meta.instructions.set(k, t); if (`${S.task}|${S.scenario}` === k) $("instr").textContent = t; });
+}
+function setTask(task) {
+  const taskChanged = task !== S.task;
+  S.task = task;
+  for (const b of $("ways").querySelectorAll("button")) b.setAttribute("aria-pressed", b.dataset.task === task);
+  renderBox();
+  if (taskChanged) changed();
+}
+
+// The population, written out person by person; hovering or clicking one shows the application
+// and lets you change that person and the three others like them.
+const short = (p) => `${p.race} ${NOUN[p.gender]}`;
+function renderChips() {
+  // One link under each group of four, centred on it: "white man".
+  $("chips").innerHTML = S.players.map((p, g) => {
+    const mid = (pos[g * PER] + pos[g * PER + PER - 1]) / 2;
+    return `<button class="who-p" data-g="${g}" style="left:${(mid / W * 100).toFixed(2)}%" aria-expanded="${popG === g}" aria-haspopup="dialog">${esc(short(p))}</button>`;
+  }).join("");
+  if (popG != null) renderPop();
+}
+const tkey = (scenario, p) => `${scenario}|${pkey(p)}`;
+async function loadTexts(scenario, players) {
+  const need = players.filter((p) => !S.texts.has(tkey(scenario, p)));
+  await Promise.all(need.map((p) => fetch(`${API}datasets/${DATASET}/scenarios/${encodeURIComponent(scenario)}/cases/${encodeURIComponent(pkey(p))}`)
+    .then((r) => r.json()).then((d) => { if (d.text) S.texts.set(tkey(scenario, p), d.text); }).catch(() => {})));
+  if (need.length && popG != null) renderPop();
+}
+// The case as the server writes it: markdown with backslash escapes, and the words that change
+// with the person (age, gender, race, pronouns) in **bold**, shown marked.
+function marked(md) {
+  let h = "", on = false;
+  for (let i = 0; i < md.length; i++) {
+    if (md[i] === "\\" && i + 1 < md.length) h += esc(md[++i]);
+    else if (md.startsWith("**", i)) { h += on ? "</mark>" : "<mark>"; on = !on; i++; }
+    else h += esc(md[i]);
+  }
+  return h + (on ? "</mark>" : "");
+}
+let popG = null, popPinned = false, closeTimer = 0, popAt = null;
+function renderPop() {
+  const g = popG, p = S.players[g], m = S.meta, t = S.texts.get(tkey(S.scenario, p));
+  const opt = (vals, cur, label) => vals.map((v) => `<option value="${esc(v)}"${String(v) === String(cur) ? " selected" : ""}>${esc(label ? label(v) : v)}</option>`).join("");
+  const pop = $("pop");
+  pop.innerHTML = `<div class="sel">
+      <select data-k="age" aria-label="Age">${opt(m.dims.age, p.age, (a) => `${a} years`)}</select>
+      <select data-k="race" aria-label="Race">${opt(m.dims.race, p.race)}</select>
+      <select data-k="gender" aria-label="Gender">${opt(m.dims.gender, p.gender, (x) => NOUN[x])}</select></div>
+    <p class="text">${t ? marked(t) : "Loading the application…"}</p>`;
+}
+function openPop(g, pinned, at) {
+  clearTimeout(closeTimer);
+  const chip = at && at.isConnected ? at : $("chips").querySelector(`[data-g="${g}"]`);
+  if (!chip) return;
+  popAt = chip;
+  popG = g; popPinned = popPinned || pinned;
+  renderPop();
+  const pop = $("pop"), r = chip.getBoundingClientRect();
+  pop.hidden = false;
+  // Centred on the link, kept inside the window; below it if it fits, otherwise above.
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  const left = Math.max(16, Math.min(r.left + r.width / 2 - w / 2, vw - w - 16));
+  const below = r.bottom + 6 + h <= vh - 8 || r.top - 6 - h < 8;
+  const top = below ? r.bottom + 6 : r.top - 6 - h;
+  pop.style.left = `${left + scrollX}px`; pop.style.top = `${Math.max(8, top) + scrollY}px`;
+  $("chips").querySelectorAll(".who-p").forEach((c) => c.setAttribute("aria-expanded", String(+c.dataset.g === g)));
+}
+function closePop() {
+  popG = null; popPinned = false; $("pop").hidden = true;
+  $("chips").querySelectorAll(".who-p").forEach((c) => c.setAttribute("aria-expanded", "false"));
+}
+function laterClose() {
+  clearTimeout(closeTimer);
+  // Stay open while pinned by a click, or while one of its menus has the focus.
+  closeTimer = setTimeout(() => { if (!popPinned && !$("pop").contains(document.activeElement)) closePop(); }, 250);
+}
+$("chips").addEventListener("mouseover", (e) => {
+  const c = e.target.closest(".who-p");
+  if (!c) return;
+  clearTimeout(closeTimer);
+  if (!popPinned && (popG !== +c.dataset.g || popAt !== c)) openPop(+c.dataset.g, false, c);
+});
+$("chips").addEventListener("mouseleave", laterClose);
+$("chips").addEventListener("click", (e) => {
+  const c = e.target.closest(".who-p");
+  if (!c) return;
+  if (popPinned && popG === +c.dataset.g) closePop(); else { popPinned = false; openPop(+c.dataset.g, true, c); }
+});
+$("chips").addEventListener("focusin", (e) => { const c = e.target.closest(".who-p"); if (c && !popPinned) openPop(+c.dataset.g, false, c); });
+$("pop").addEventListener("mouseenter", () => clearTimeout(closeTimer));
+$("pop").addEventListener("mouseleave", laterClose);
+$("pop").addEventListener("change", (e) => {
+  const k = e.target.dataset.k, g = popG;
+  if (!k || g == null) return;
+  S.players[g] = { ...S.players[g], [k]: k === "age" ? +e.target.value : e.target.value };
+  const idx = popAt ? [...$("chips").querySelectorAll(".who-p")].indexOf(popAt) : -1;
+  changed();
+  openPop(g, true, $("chips").querySelectorAll(".who-p")[idx]);  // keep it open at the same word
+});
+document.addEventListener("click", (e) => { if (popG != null && !$("pop").contains(e.target) && !e.target.closest(".who-p")) closePop(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && popG != null) { const g = popG; closePop(); const c = $("chips").querySelector(`[data-g="${g}"]`); if (c) c.focus(); } });
+$("ways").addEventListener("click", (e) => { const b = e.target.closest("button[data-task]"); if (b) setTask(b.dataset.task); });
+
+// ---- start ----
+(async function init() {
+  readHash();
+  try {
+    const get = async (path) => { const r = await fetch(API + path), d = await r.json(); if (!r.ok) throw new Error(detail(d) || r.statusText); return d; };
+    const [ds, scenarios, models] = await Promise.all([get(`datasets/${DATASET}`), get(`datasets/${DATASET}/scenarios`), get("models")]);
+    // The person selector: one menu per dimension of the dataset (age as numbers).
+    const dims = Object.fromEntries(ds.dimensions.map((d) => [d.name, d.name === "age" ? d.values.map(Number) : d.values]));
+    S.meta = { dims, scenarios, models, tasks: ds.tasks.map((t) => t.id), instructions: new Map() };  // task|scenario -> text, null while loading
+  } catch (e) {
+    $("q").textContent = `The model server is not reachable (${e.message || e}).`;
+    return;
+  }
+  for (const m of S.meta.models) MODEL_NAMES[m.id] = m.label;
+  const usable = S.meta.models.filter((m) => m.available).map((m) => m.id);
+  if (!usable.includes(S.model)) S.model = usable[0];
+  const ok = (p) => S.meta.dims.age.includes(p.age) && S.meta.dims.gender.includes(p.gender) && S.meta.dims.race.includes(p.race);
+  S.players = S.players.map((p, g) => (ok(p) ? p : DEFAULT_PLAYERS[g]));
+  if (!S.meta.scenarios.some((q) => q.id === S.scenario)) S.scenario = S.meta.scenarios[0].id;
+  // Models configured but not callable yet are listed, greyed out, with the reason on hover.
+  $("model").innerHTML = S.meta.models.map((m) => (!m.available
+    ? `<option value="${esc(m.id)}" disabled title="${esc(m.unavailable_reason || "")}">${esc(m.label)} (not supported yet)</option>`
+    : `<option value="${esc(m.id)}"${m.id === S.model ? " selected" : ""}>${esc(m.label)}</option>`)).join("");
+  if (!S.meta.tasks.includes(S.task)) S.task = S.meta.tasks[0];
+  $("ways").innerHTML = S.meta.tasks.map((t) => `<button data-task="${esc(t)}" aria-pressed="${t === S.task}">${esc(t)}</button>`).join("");
+  setTask(S.task); showQuestion(); changed(); fetchAnswers();
+})();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "state": {
+    "candidates": {"A": "{{candidate_A}}", "B": "{{candidate_B}}", "C": "{{candidate_C}}"}
+  },
+  "questions": {
+    "q": {
+      "type": "choice",
+      "instructions": "Three people are in the same situation, described in candidates A, B and C. Only one can get the favorable decision asked for at the end of each description. Which one?",
+      "criteria": {"A": "Candidate A", "B": "Candidate B", "C": "Candidate C"}
+    }
+  }
+}

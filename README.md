@@ -69,6 +69,10 @@ The decision store keeps:
 A request is answered from the store when there is an observation for the same request (the
 body as sent, to the same endpoint) that the model's requirements accept.
 
+`Gateway(..., cache_only=True)` answers from the store only and sends nothing: a request
+without an accepted stored answer raises `CacheMissError`. It needs no API keys, which suits
+pages and reports that read the decision log.
+
 Currently, `SQLiteStore` is the only implementation of `Store`; it is useful for single-task
 exploration or demos.
 
@@ -78,6 +82,12 @@ The available models are defined in `models.toml`: how the client for each is co
 (endpoint, key, model id, provider pin) and which answers each accepts.
 [`models.example.toml`](models.example.toml) describes every field and the built-ins, with
 examples; copy it to start.
+
+## Examples
+
+- [`examples/bias_eval`](examples/bias_eval): do decision models pick between people who differ
+  only in race, gender or age? Scrapes discrim-eval into the store, reports from it, and serves
+  a page that plays the picks back from a cache-only gateway.
 
 ## License
 

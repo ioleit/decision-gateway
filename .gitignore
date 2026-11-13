@@ -7,3 +7,4 @@ build/
 *.sqlite-wal
 *.sqlite-shm
 .pytest_cache/
+examples/bias_eval/data/

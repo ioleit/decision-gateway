@@ -18,6 +18,9 @@ JSON body), the gateway
 Everything else passes through unchanged and unrecorded: other endpoints, failed responses
 (the SDK raises and retries as usual), and requests with assets or a compressed body, which
 are not stored yet.
+
+With cache_only=True nothing is sent at all: a System One request without an accepted stored
+answer raises CacheMissError (and is not recorded), and so does anything else.
 """
 
 from __future__ import annotations
@@ -45,6 +48,10 @@ if TYPE_CHECKING:
 SYSTEM_ONE_PATH = "/v1/systemone"
 
 
+class CacheMissError(Exception):
+    """A cache-only gateway was asked something it has no accepted stored answer for."""
+
+
 @dataclass(frozen=True)
 class _Request:
     """A System One request the gateway handles."""
@@ -55,10 +62,11 @@ class _Request:
 
 
 class _Gateway:
-    def __init__(self, model: ModelConfig, store: Store, labels: dict[str, Any] | None) -> None:
+    def __init__(self, model: ModelConfig, store: Store, labels: dict[str, Any] | None, *, cache_only: bool) -> None:
         self.model = model
         self.store = store
         self.labels = dict(labels or {})
+        self.cache_only = cache_only
 
     def _labels(self, request: httpx2.Request) -> dict[str, Any]:
         sent = request.headers.get(LABELS_HEADER)
@@ -97,7 +105,12 @@ class _Gateway:
                 return httpx2.Response(200, json=observation.response)
         return None
 
-    def _check_sending(self, req: _Request) -> None:
+    def _check_sending(self, req: _Request | None) -> None:
+        if self.cache_only:
+            what = "not in the store" if req is not None else "not a System One request"
+            raise CacheMissError(f"{self.model.name}: {what}, and the gateway is cache only")
+        if req is None:
+            return
         check_sending(self.model.name, self.model.requirements, Asking(self.model.name, req.body, _now()))
 
     def _received(
@@ -150,13 +163,16 @@ class GatewayTransport(_Gateway, httpx2.BaseTransport):
         store: Store,
         labels: dict[str, Any] | None = None,
         transport: httpx2.BaseTransport | None = None,
+        *,
+        cache_only: bool = False,
     ) -> None:
-        super().__init__(model, store, labels)
+        super().__init__(model, store, labels, cache_only=cache_only)
         self.transport = transport or httpx2.HTTPTransport()
 
     def handle_request(self, request: httpx2.Request) -> httpx2.Response:
         req = self._parse(request)
         if req is None:
+            self._check_sending(None)
             return self.transport.handle_request(self._outgoing(request, None))
         tags = self._labels(request)
         hit = self._lookup(req, tags)
@@ -181,13 +197,16 @@ class AsyncGatewayTransport(_Gateway, httpx2.AsyncBaseTransport):
         store: Store,
         labels: dict[str, Any] | None = None,
         transport: httpx2.AsyncBaseTransport | None = None,
+        *,
+        cache_only: bool = False,
     ) -> None:
-        super().__init__(model, store, labels)
+        super().__init__(model, store, labels, cache_only=cache_only)
         self.transport = transport or httpx2.AsyncHTTPTransport()
 
     async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
         req = self._parse(request)
         if req is None:
+            self._check_sending(None)
             return await self.transport.handle_async_request(self._outgoing(request, None))
         tags = self._labels(request)
         hit = self._lookup(req, tags)

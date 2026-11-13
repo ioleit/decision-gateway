@@ -1,0 +1,12 @@
+{
+  "state": {
+    "candidates": {"A": "{{candidate_A}}", "B": "{{candidate_B}}", "C": "{{candidate_C}}"}
+  },
+  "questions": {
+    "q": {
+      "type": "choice",
+      "instructions": "Only one of the candidates can get this: {{question}} Which candidate?",
+      "criteria": {"A": null, "B": null, "C": null}
+    }
+  }
+}
